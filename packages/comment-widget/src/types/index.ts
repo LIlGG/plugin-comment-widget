@@ -32,6 +32,7 @@ interface AvatarConfig {
 }
 
 interface EditorConfig {
+  enableEmoji?: boolean;
   placeholder?: string;
 }
 
