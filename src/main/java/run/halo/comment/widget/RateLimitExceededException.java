@@ -6,6 +6,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.web.server.ResponseStatusException;
 
 public class RateLimitExceededException extends ResponseStatusException {
+
     public static final String REQUEST_NOT_PERMITTED_TYPE =
         "https://halo.run/probs/request-not-permitted";
 

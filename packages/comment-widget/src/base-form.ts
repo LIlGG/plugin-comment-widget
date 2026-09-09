@@ -1,6 +1,6 @@
 import type { User } from '@halo-dev/api-client';
 import { consume } from '@lit/context';
-import { debounce } from 'es-toolkit';
+import type { Editor } from '@tiptap/core';
 import { css, html, LitElement } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
@@ -14,6 +14,7 @@ import {
   nameContext,
   toastContext,
 } from './context';
+import type { SubmissionDetail } from './utils/submission';
 import './icons/icon-loading';
 import { msg } from '@lit/localize';
 import type { ToastManager } from './lit-toast';
@@ -25,7 +26,12 @@ import { ofetch } from 'ofetch';
 import type { CommentEditor } from './comment-editor';
 import { cleanHtml } from './utils/html';
 import './base-tooltip';
-import { uploadEditorFiles } from './extension/editor-upload';
+import {
+  resetUploadSession,
+  uploadEditorFiles,
+  uploadedIds,
+  uploadSession,
+} from './extension/editor-upload';
 
 export class BaseForm extends LitElement {
   @consume({ context: baseUrlContext })
@@ -39,6 +45,9 @@ export class BaseForm extends LitElement {
   @consume({ context: configMapDataContext })
   @state()
   configMapData: ConfigMapData | undefined;
+
+  @state()
+  uploading = false;
 
   @consume({ context: allowAnonymousCommentsContext, subscribe: true })
   @state()
@@ -196,7 +205,8 @@ export class BaseForm extends LitElement {
   override render() {
     return html`
       <form class="form w-full flex flex-col gap-4" @submit="${this.onSubmit}">
-        <comment-editor ${ref(this.editorRef)} .placeholder=${this.configMapData?.editor?.placeholder}></comment-editor>
+        <comment-editor .disabled=${this.submitting || this.uploading}
+          .enableUpload=${this.canUploadImages} ${ref(this.editorRef)} .placeholder=${this.configMapData?.editor?.placeholder}></comment-editor>
 
         ${when(
           !this.currentUser && this.allowAnonymousComments,
@@ -279,7 +289,7 @@ export class BaseForm extends LitElement {
             )}
 
             <button
-              .disabled=${this.submitting}
+              .disabled=${this.submitting || this.uploading}
               type="submit"
               class="form-submit outline-none focus:shadow-input h-12 text-sm inline-flex border border-primary-1 border-solid items-center justify-center gap-2 bg-primary-1 text-white px-3 rounded-base hover:opacity-80 transition-all"
             >
@@ -297,32 +307,73 @@ export class BaseForm extends LitElement {
     `;
   }
 
-  private debouncedSubmit = debounce(async (data: Record<string, unknown>) => {
-    const uploadedResult = await uploadEditorFiles(
-      this.editorRef.value?.editor
-    );
-    if (!uploadedResult) {
-      return;
+  private get canUploadImages() {
+    if (!this.configMapData?.editor?.enableUpload) {
+      return false;
     }
-    const content = cleanHtml(this.editorRef.value?.editor?.getHTML());
-    const characterCount =
-      this.editorRef.value?.editor?.storage.characterCount.characters();
-
-    if (!characterCount) {
-      this.toastManager?.warn(msg('Please enter content'));
-      this.editorRef.value?.setFocus();
-      return;
+    if (this.currentUser) {
+      return true;
     }
+    return !!this.configMapData.editor.upload?.allowAnonymous;
+  }
 
-    const event = new CustomEvent('submit', {
+  private async dispatchSubmission(
+    data: Record<string, unknown>,
+    content: string,
+    editor: Editor
+  ) {
+    const submissions: Promise<unknown>[] = [];
+    const event = new CustomEvent<SubmissionDetail>('submit', {
       detail: {
         ...data,
+        waitUntil: (submission: Promise<unknown>) =>
+          submissions.push(submission),
         content,
+        uploadIds: uploadedIds(editor),
+        uploadSession: uploadSession(editor),
         hidden: data.hidden === 'on',
       },
     });
     this.dispatchEvent(event);
-  }, 300);
+    await Promise.allSettled(submissions);
+  }
+
+  private async submitData(data: Record<string, unknown>) {
+    if (this.submitting || this.uploading) {
+      return;
+    }
+    const editor = this.editorRef.value?.editor;
+    if (!editor) {
+      return;
+    }
+    this.uploading = true;
+    editor.setEditable(false, false);
+    try {
+      const uploadedResult = await uploadEditorFiles(
+        this.editorRef.value?.editor,
+        this.baseUrl
+      );
+      if (!uploadedResult) {
+        return;
+      }
+      const content = cleanHtml(this.editorRef.value?.editor?.getHTML());
+      const characterCount =
+        this.editorRef.value?.editor?.storage.characterCount.characters();
+
+      if (!characterCount && !uploadedIds(editor).length) {
+        this.toastManager?.warn(msg('Please enter content'));
+        this.editorRef.value?.setFocus();
+        return;
+      }
+
+      await this.dispatchSubmission(data, content, editor);
+    } finally {
+      this.uploading = false;
+      if (!editor.isDestroyed) {
+        editor.setEditable(true, false);
+      }
+    }
+  }
 
   onSubmit(e: Event) {
     e.preventDefault();
@@ -340,12 +391,15 @@ export class BaseForm extends LitElement {
       })
     );
 
-    this.debouncedSubmit(data);
+    void this.submitData(data);
   }
 
   resetForm() {
     const form = this.shadowRoot?.querySelector('form');
     form?.reset();
+    if (this.editorRef.value?.editor) {
+      resetUploadSession(this.editorRef.value.editor);
+    }
     this.editorRef.value?.reset();
   }
 

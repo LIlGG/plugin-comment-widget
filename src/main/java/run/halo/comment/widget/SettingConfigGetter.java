@@ -6,9 +6,7 @@ import lombok.experimental.Accessors;
 import org.springframework.lang.NonNull;
 import reactor.core.publisher.Mono;
 import run.halo.comment.widget.captcha.CaptchaType;
-
 public interface SettingConfigGetter {
-
     /**
      * Never {@link Mono#empty()}.
      */
@@ -28,6 +26,7 @@ public interface SettingConfigGetter {
 
     @Data
     class EditorConfig {
+
         public static final String GROUP = "editor";
         private boolean enableUpload = false;
         private UploadConfig upload = new UploadConfig();
@@ -35,12 +34,14 @@ public interface SettingConfigGetter {
 
     @Data
     class UploadConfig {
+
         private boolean allowAnonymous = false;
 
         private UploadAttachment attachment = new UploadAttachment();
 
         @Data
         static class UploadAttachment {
+
             private String attachmentPolicy;
             private String attachmentGroup;
         }
@@ -52,8 +53,7 @@ public interface SettingConfigGetter {
         public static final String GROUP = "security";
 
         @Getter(onMethod_ = @NonNull)
-        private CaptchaConfig captcha
-            = CaptchaConfig.empty();
+        private CaptchaConfig captcha = CaptchaConfig.empty();
 
         public SecurityConfig setCaptcha(CaptchaConfig captcha) {
             this.captcha = (captcha == null ? CaptchaConfig.empty() : captcha);
@@ -61,7 +61,8 @@ public interface SettingConfigGetter {
         }
 
         public static SecurityConfig empty() {
-            return new SecurityConfig().setCaptcha(CaptchaConfig.empty());
+            return new SecurityConfig()
+                .setCaptcha(CaptchaConfig.empty());
         }
     }
 
@@ -72,8 +73,7 @@ public interface SettingConfigGetter {
         private boolean anonymousCommentCaptcha;
 
         @Getter(onMethod_ = @NonNull)
-        private CaptchaType type
-            = CaptchaType.ALPHANUMERIC;
+        private CaptchaType type = CaptchaType.ALPHANUMERIC;
 
         private boolean ignoreCase = true;
 

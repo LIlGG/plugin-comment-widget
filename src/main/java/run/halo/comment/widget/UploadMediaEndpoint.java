@@ -4,24 +4,21 @@ import static org.springdoc.core.fn.builders.apiresponse.Builder.responseBuilder
 import static org.springdoc.core.fn.builders.content.Builder.contentBuilder;
 import static org.springdoc.core.fn.builders.requestbody.Builder.requestBodyBuilder;
 import static org.springframework.web.reactive.function.server.RequestPredicates.contentType;
-import static run.halo.app.infra.utils.FileTypeDetectUtils.getFileExtension;
 
-import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import io.github.resilience4j.reactor.ratelimiter.operator.RateLimiterOperator;
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Set;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springdoc.core.fn.builders.schema.Builder;
 import org.springdoc.webflux.core.fn.SpringdocRouteBuilder;
+import org.springframework.core.io.buffer.DataBufferLimitException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.multipart.FilePart;
@@ -30,9 +27,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.stereotype.Component;
-import org.springframework.util.CollectionUtils;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.reactive.function.BodyExtractors;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
@@ -40,19 +34,25 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebInputException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import run.halo.app.core.extension.attachment.Attachment;
+import run.halo.app.core.extension.attachment.Constant;
 import run.halo.app.core.extension.endpoint.CustomEndpoint;
 import run.halo.app.core.extension.service.AttachmentService;
+import run.halo.app.extension.ExtensionUtil;
 import run.halo.app.extension.GroupVersion;
-import run.halo.app.extension.ReactiveExtensionClient;
+import run.halo.app.extension.MetadataUtil;
 import run.halo.app.infra.AnonymousUserConst;
+import run.halo.comment.widget.upload.CommentUpload;
+import run.halo.comment.widget.upload.UploadIdentity;
+import run.halo.comment.widget.upload.UploadLifecycleService;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class UploadMediaEndpoint implements CustomEndpoint {
 
-    private final ReactiveExtensionClient client;
+    private final UploadLifecycleService lifecycle;
     private final SettingConfigGetter settingConfigGetter;
     private final AttachmentService attachmentService;
     private final RateLimiterRegistry rateLimiterRegistry;
@@ -61,73 +61,118 @@ public class UploadMediaEndpoint implements CustomEndpoint {
     @Override
     public RouterFunction<ServerResponse> endpoint() {
         final var tag = "Comment Widget Media Upload";
-        return SpringdocRouteBuilder.route().POST("upload",
-            contentType(MediaType.MULTIPART_FORM_DATA), request -> request.body(
-                    BodyExtractors.toMultipartData())
-                .map(UploadRequest::new)
-                .flatMap(uploadReq -> {
-                    var files = uploadReq.getFiles();
-                    return uploadAttachments(files);
-                })
-                .flatMap(
-                    attachments -> ServerResponse.ok().bodyValue(attachments))
-                .transformDeferred(createIpBasedRateLimiter(request))
-                .onErrorMap(RequestNotPermitted.class,
-                    RateLimitExceededException::new
-                ), builder -> builder.operationId("UploadAttachment")
-                .tag(tag)
-                .requestBody(requestBodyBuilder().required(true)
-                    .content(contentBuilder().mediaType(
-                            MediaType.MULTIPART_FORM_DATA_VALUE)
-                        .schema(Builder.schemaBuilder()
-                            .implementation(IUploadRequest.class))))
-                .response(responseBuilder().implementation(Attachment.class))
-                .build()
-        ).build();
+        return SpringdocRouteBuilder.route()
+            .POST("upload", contentType(MediaType.MULTIPART_FORM_DATA), this::upload, builder ->
+                builder
+                    .operationId("UploadAttachment")
+                    .tag(tag)
+                    .requestBody(
+                        requestBodyBuilder()
+                            .required(true)
+                            .content(
+                                contentBuilder()
+                                    .mediaType(MediaType.MULTIPART_FORM_DATA_VALUE)
+                                    .schema(
+                                        Builder.schemaBuilder().implementation(IUploadRequest.class)
+                                    )
+                            )
+                    )
+                    .response(responseBuilder().implementation(UploadedImage.class))
+                    .build()
+            )
+            .build();
+    }
+
+    private Mono<ServerResponse> upload(ServerRequest request) {
+        return settingConfigGetter
+            .getEditorConfig()
+            .flatMap(config ->
+                Mono.defer(() -> uploadWithConfig(request, config)).transformDeferred(
+                    createIpBasedRateLimiter(request)
+                )
+            )
+            .flatMap(attachments -> ServerResponse.ok().bodyValue(attachments))
+            .onErrorMap(RequestNotPermitted.class, RateLimitExceededException::new);
+    }
+
+    private Mono<List<UploadedImage>> uploadWithConfig(
+        ServerRequest request,
+        SettingConfigGetter.EditorConfig config
+    ) {
+        var hash = UploadIdentity.credential(
+            request.headers().firstHeader(UploadIdentity.TOKEN_HEADER)
+        );
+        if (!config.isEnableUpload()) {
+            return Mono.error(
+                new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "File upload feature is not enabled"
+                )
+            );
+        }
+        return validateUploadPermission(config).then(readAndUpload(request, hash, config));
+    }
+
+    private Mono<List<UploadedImage>> readAndUpload(
+        ServerRequest request,
+        String hash,
+        SettingConfigGetter.EditorConfig config
+    ) {
+        return Mono.usingWhen(
+            request
+                .multipartData()
+                .map(parts -> parts.values().stream().flatMap(List::stream).toList()),
+            parts -> uploadParts(parts, config, hash),
+            this::deleteParts,
+            (parts, error) -> deleteParts(parts),
+            this::deleteParts
+        ).onErrorMap(DataBufferLimitException.class, e ->
+            new ResponseStatusException(
+                HttpStatus.PAYLOAD_TOO_LARGE,
+                "Upload exceeds multipart limits",
+                e
+            )
+        );
+    }
+
+    private Mono<List<UploadedImage>> uploadParts(
+        List<Part> parts,
+        SettingConfigGetter.EditorConfig config,
+        String hash
+    ) {
+        if (parts.isEmpty()) {
+            return Mono.error(new ServerWebInputException("At least one file is required"));
+        }
+        if (parts.stream().anyMatch(this::isInvalidPart)) {
+            return Mono.error(new ServerWebInputException("Only files parts are accepted"));
+        }
+        return uploadAttachmentsToStorage(
+            parts.stream().map(FilePart.class::cast).toList(),
+            config.getUpload().getAttachment(),
+            hash
+        );
+    }
+
+    private boolean isInvalidPart(Part part) {
+        if (!(part instanceof FilePart)) {
+            return true;
+        }
+        return !part.name().equals("files");
+    }
+
+    private Mono<Void> deleteParts(List<Part> parts) {
+        return Flux.fromIterable(parts).concatMap(Part::delete).then();
     }
 
     @Override
     public GroupVersion groupVersion() {
-        return GroupVersion.parseAPIVersion(
-            "api.commentwidget.halo.run/v1alpha1");
-    }
-
-    private Mono<List<Attachment>> uploadAttachments(List<FilePart> fileParts) {
-        return validateUploadRequest(fileParts)
-            .flatMap(editorConfig -> validateUploadPermission(editorConfig)
-                .then(Mono.just(editorConfig))
-            )
-            .flatMap(editorConfig -> {
-                var uploadConfig = editorConfig.getUpload();
-                return uploadAttachmentsToStorage(fileParts,
-                    uploadConfig.getAttachment()
-                );
-            });
-    }
-
-    private Mono<SettingConfigGetter.EditorConfig> validateUploadRequest(
-        List<FilePart> fileParts) {
-        if (fileParts.isEmpty()) {
-            return Mono.error(
-                new ServerWebInputException("At least one file is required"));
-        }
-
-        return settingConfigGetter.getEditorConfig().flatMap(editorConfig -> {
-            if (!editorConfig.isEnableUpload()) {
-                return Mono.error(
-                    new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "File upload feature is not enabled"
-                    ));
-            }
-            return Mono.just(editorConfig);
-        });
+        return GroupVersion.parseAPIVersion("api.commentwidget.halo.run/v1alpha1");
     }
 
     /**
      * Validate upload permission (anonymous user permission check).
      */
-    private Mono<Void> validateUploadPermission(
-        SettingConfigGetter.EditorConfig editorConfig) {
+    private Mono<Void> validateUploadPermission(SettingConfigGetter.EditorConfig editorConfig) {
         var uploadConfig = editorConfig.getUpload();
 
         if (uploadConfig.isAllowAnonymous()) {
@@ -138,104 +183,116 @@ public class UploadMediaEndpoint implements CustomEndpoint {
         return isAnonymousCommenter().flatMap(isAnonymous -> {
             if (isAnonymous) {
                 return Mono.error(
-                    new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
                         "Anonymous users are not allowed to upload files"
-                    ));
+                    )
+                );
             }
             return Mono.empty();
         });
     }
 
-    /**
-     * Upload attachments to storage service. If any attachment upload fails, all successfully uploaded attachments will be rolled back and deleted.
-     */
-    private Mono<List<Attachment>> uploadAttachmentsToStorage(
-        List<FilePart> fileParts,
-        SettingConfigGetter.UploadConfig.UploadAttachment uploadAttachment) {
-        var policyName = uploadAttachment.getAttachmentPolicy();
-        var groupName = uploadAttachment.getAttachmentGroup();
-        if (StringUtils.isBlank(policyName)) {
-            return Mono.error(
-                new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Please configure the upload policy"
-                ));
+    private Mono<List<UploadedImage>> uploadAttachmentsToStorage(
+        List<FilePart> files,
+        SettingConfigGetter.UploadConfig.UploadAttachment settings,
+        String hash
+    ) {
+        if (StringUtils.isBlank(settings.getAttachmentPolicy())) {
+            return Mono.error(new ServerWebInputException("Please configure the upload policy"));
         }
-        List<Attachment> uploadedAttachments = new CopyOnWriteArrayList<>();
-
-        return authenticationConsumerNullable(
-            authentication -> Flux.fromIterable(fileParts)
-                // Ensure sequential upload
-                .concatMap(filePart -> {
-                    String fileName = UUID.randomUUID().toString();
-                    String extension = getFileExtension(filePart.filename());
-                    return attachmentService.upload(policyName, groupName,
-                        fileName + extension, filePart.content(),
-                        filePart.headers().getContentType()
-                    );
-                })
-                .flatMap(this::setPermalinkToAttachment)
-                .doOnNext(uploadedAttachments::add)
+        return authenticationConsumerNullable(authentication ->
+            Flux.fromIterable(files)
+                .concatMap(file -> beginAndUpload(file, settings, hash, authentication.getName()))
                 .collectList()
-                .onErrorResume(error -> rollbackUploadedAttachments(
-                    uploadedAttachments).then(Mono.error(error))));
+        );
     }
 
-    /**
-     * Rollback and delete uploaded attachments.
-     */
-    private Mono<Void> rollbackUploadedAttachments(
-        List<Attachment> attachments) {
-        if (attachments.isEmpty()) {
-            return Mono.empty();
-        }
-
-        return Flux.fromIterable(attachments).flatMap(attachment -> {
-            String attachmentName = attachment.getMetadata().getName();
-            return attachmentService.delete(attachment)
-                .flatMap(client::delete)
-                .onErrorResume(deleteError -> {
-                    log.error(
-                        "Failed to delete attachment {}, please manually clean up",
-                        attachmentName, deleteError
-                    );
-                    return Mono.empty();
-                });
-        }).then();
+    private Mono<UploadedImage> beginAndUpload(
+        FilePart file,
+        SettingConfigGetter.UploadConfig.UploadAttachment settings,
+        String hash,
+        String owner
+    ) {
+        return Mono.fromCallable(() -> lifecycle.begin(hash, owner))
+            .subscribeOn(Schedulers.boundedElastic())
+            .flatMap(record -> storeFile(file, settings, owner, record));
     }
+
+    private Mono<UploadedImage> storeFile(
+        FilePart file,
+        SettingConfigGetter.UploadConfig.UploadAttachment settings,
+        String owner,
+        CommentUpload record
+    ) {
+        return attachmentService
+            .upload(
+                owner,
+                settings.getAttachmentPolicy(),
+                settings.getAttachmentGroup(),
+                file,
+                attachment -> markAttachment(attachment, record.getMetadata().getName())
+            )
+            .flatMap(attachment -> recordAttachment(record.getMetadata().getName(), attachment))
+            .flatMap(this::setPermalinkToAttachment)
+            .flatMap(attachment -> completeUpload(record, attachment));
+    }
+
+    private void markAttachment(Attachment attachment, String uploadId) {
+        MetadataUtil.nullSafeLabels(attachment).put(CommentUpload.LABEL, uploadId);
+        ExtensionUtil.addFinalizers(attachment.getMetadata(), Set.of(Constant.FINALIZER_NAME));
+    }
+
+    private Mono<Attachment> recordAttachment(String uploadId, Attachment attachment) {
+        return Mono.fromRunnable(() -> lifecycle.attached(uploadId, attachment))
+            .subscribeOn(Schedulers.boundedElastic())
+            .thenReturn(attachment);
+    }
+
+    private Mono<UploadedImage> completeUpload(CommentUpload record, Attachment attachment) {
+        return Mono.fromCallable(() -> {
+            var url = attachment.getStatus().getPermalink();
+            lifecycle.uploaded(record.getMetadata().getName(), attachment, url);
+            return new UploadedImage(
+                record.getMetadata().getName(),
+                url,
+                record.getSpec().getExpiresAt()
+            );
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    public record UploadedImage(String uploadId, String url, Instant expiresAt) {}
 
     /**
      * Set the permanent link of the attachment.
      */
     private Mono<Attachment> setPermalinkToAttachment(Attachment attachment) {
-        return attachmentService.getPermalink(attachment).doOnNext(
-            permalink -> {
+        return attachmentService
+            .getPermalink(attachment)
+            .doOnNext(permalink -> {
                 var status = attachment.getStatus();
                 if (status == null) {
                     status = new Attachment.AttachmentStatus();
                     attachment.setStatus(status);
                 }
                 status.setPermalink(permalink.toString());
-            }).thenReturn(attachment);
+            })
+            .thenReturn(attachment);
     }
 
-    private <T> RateLimiterOperator<T> createIpBasedRateLimiter(
-        ServerRequest request) {
+    private <T> RateLimiterOperator<T> createIpBasedRateLimiter(ServerRequest request) {
         var clientIp = IpAddressUtils.getClientIp(request);
         if (IpAddressUtils.UNKNOWN.equalsIgnoreCase(clientIp)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         }
         var rateLimiterKey = "upload-ip-" + clientIp;
-        var rateLimiter = rateLimiterRegistry.rateLimiter(rateLimiterKey,
-            new RateLimiterConfig.Builder().limitForPeriod(10)
-                .limitRefreshPeriod(Duration.ofSeconds(60))
-                .build()
-        );
-        rateLimiterKeyRegistry.register(rateLimiterKey);
+        var rateLimiter = rateLimiterKeyRegistry.acquire(rateLimiterRegistry, rateLimiterKey);
         if (log.isDebugEnabled()) {
             var metrics = rateLimiter.getMetrics();
             log.debug(
                 "Upload with Rate Limiter: {}, available permissions: {}, number of " +
-                    "waiting threads: {}", rateLimiter,
+                    "waiting threads: {}",
+                rateLimiter,
                 metrics.getAvailablePermissions(),
                 metrics.getNumberOfWaitingThreads()
             );
@@ -243,45 +300,26 @@ public class UploadMediaEndpoint implements CustomEndpoint {
         return RateLimiterOperator.of(rateLimiter);
     }
 
-    <T> Mono<T> authenticationConsumerNullable(
-        Function<Authentication, Mono<T>> func) {
-        return ReactiveSecurityContextHolder.getContext().map(
-            SecurityContext::getAuthentication).flatMap(func);
+    <T> Mono<T> authenticationConsumerNullable(Function<Authentication, Mono<T>> func) {
+        return ReactiveSecurityContextHolder.getContext()
+            .map(SecurityContext::getAuthentication)
+            .flatMap(func);
     }
 
     Mono<Boolean> isAnonymousCommenter() {
-        return ReactiveSecurityContextHolder.getContext().map(
-                context -> AnonymousUserConst.isAnonymousUser(
-                    context.getAuthentication().getName())
+        return ReactiveSecurityContextHolder.getContext()
+            .map(context ->
+                AnonymousUserConst.isAnonymousUser(context.getAuthentication().getName())
             )
             .defaultIfEmpty(true);
     }
 
     @Schema(types = "object")
     public interface IUploadRequest {
-
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Attachment files, support multiple files")
+        @Schema(
+            requiredMode = Schema.RequiredMode.REQUIRED,
+            description = "Attachment files, support multiple files"
+        )
         List<FilePart> getFiles();
     }
-
-    public record UploadRequest(MultiValueMap<String, Part> formData)
-        implements IUploadRequest {
-
-        @Override
-        public List<FilePart> getFiles() {
-            List<Part> parts = formData.get("files");
-            if (CollectionUtils.isEmpty(parts)) {
-                throw new ServerWebInputException("No files found");
-            }
-
-            if (parts.size() > 10) {
-                throw new ServerWebInputException("Maximum of 10 files allowed");
-            }
-
-            return parts.stream().filter(part -> part instanceof FilePart)
-                .map(part -> (FilePart) part)
-                .collect(Collectors.toList());
-        }
-    }
-
 }

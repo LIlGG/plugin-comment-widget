@@ -32,6 +32,8 @@ interface AvatarConfig {
 }
 
 interface EditorConfig {
+  enableUpload?: boolean;
+  upload?: { allowAnonymous?: boolean };
   placeholder?: string;
 }
 

@@ -1,5 +1,6 @@
 import { msg } from '@lit/localize';
 import type { Editor } from '@tiptap/core';
+import { EditorState } from '@tiptap/pm/state';
 import { css, html, LitElement, type PropertyValues, unsafeCSS } from 'lit';
 import { state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
@@ -96,6 +97,18 @@ export class CommentEditor extends LitElement {
   @property({ type: Boolean, attribute: 'keep-alive' })
   keepAlive = false;
 
+  @property({ type: Boolean })
+  enableUpload = false;
+
+  @property({ type: Boolean })
+  disabled = false;
+
+  protected override updated(changes: PropertyValues) {
+    if (changes.has('disabled')) {
+      this.editor?.setEditable(!this.disabled, false);
+    }
+  }
+
   @state()
   editor: Editor | undefined;
 
@@ -115,11 +128,12 @@ export class CommentEditor extends LitElement {
       'tiptap-extension-code-block-shiki'
     );
     const { EditorUpload } = await import('./extension/editor-upload');
-    const { Image } = await import('@tiptap/extension-image');
+    const { EditorImage } = await import('./extension/editor-image');
 
     this.loading = false;
 
     this.editor = new Editor({
+      editable: !this.disabled,
       element: this.shadowRoot?.getElementById('editor-container'),
       extensions: [
         StarterKit.configure({
@@ -145,18 +159,19 @@ export class CommentEditor extends LitElement {
 
         CharacterCount,
 
-        Image.configure({
+        EditorImage.configure({
           inline: true,
           resize: {
             enabled: true,
             alwaysPreserveAspectRatio: true,
             minWidth: 50,
             minHeight: 50,
-            directions: ['bottom-right'],
+            directions: ['right'],
           },
         }),
 
         EditorUpload.configure({
+          enabled: () => this.enableUpload,
           baseUrl: this.baseUrl,
         }),
       ],
@@ -198,11 +213,26 @@ export class CommentEditor extends LitElement {
   }
 
   reset() {
-    this.editor?.commands.setContent('');
+    if (!this.editor) {
+      return;
+    }
+    this.editor.commands.setContent('');
+    // A new EditorState clears undo history after a successful submission.
+    const { doc, schema, plugins } = this.editor.state;
+    this.editor.view.updateState(EditorState.create({ doc, schema, plugins }));
   }
 
   onEmojiSelect(e: CustomEvent) {
-    this.editor?.chain().focus().insertContent(e.detail.native).run();
+    if (!this.disabled) {
+      this.editor?.chain().focus().insertContent(e.detail.native).run();
+    }
+  }
+
+  private runAction(item: ActionItem, editor?: Editor) {
+    if (!editor?.isEditable) {
+      return;
+    }
+    item.run?.(editor);
   }
 
   protected override render() {
@@ -222,7 +252,7 @@ export class CommentEditor extends LitElement {
             this.renderActionItem(item, this.editor)
           )}
           ${this.renderActionItem({ type: 'separator' })}
-          ${this.renderActionItem(uploadActionItem, this.editor)}
+          ${when(this.enableUpload, () => this.renderActionItem(uploadActionItem, this.editor))}
           <li class="flex items-center">
             <emoji-button @emoji-select=${this.onEmojiSelect}></emoji-button>
           </li>
@@ -244,7 +274,7 @@ export class CommentEditor extends LitElement {
           <div
             aria-label=${ifDefined(item.displayName?.())}
             title=${ifDefined(item.displayName?.())}
-            @click=${() => item.run?.(editor)}
+            @click=${() => this.runAction(item, editor)}
             role="button"
             class="size-7 hover:bg-muted-3 active:bg-muted-2 ${isActive ? 'bg-muted-3 text-text-1' : 'text-text-3 hover:text-text-1'} rounded-base flex items-center justify-center cursor-pointer transition-all"
           >
@@ -270,6 +300,32 @@ export class CommentEditor extends LitElement {
       .tiptap {
         outline: none;
         border: none;
+      }
+
+      .tiptap.image-caret-active {
+        caret-color: transparent;
+      }
+
+      .tiptap .image-caret {
+        display: inline-block;
+        position: relative;
+        z-index: 1;
+        width: 0;
+        height: 1em;
+        vertical-align: text-bottom;
+        pointer-events: none;
+      }
+
+      .tiptap .image-caret::after {
+        content: '';
+        position: absolute;
+        inset: 0 auto 0 0;
+        border-left: 1px solid currentColor;
+        animation: image-caret-blink 1.1s step-end infinite;
+      }
+
+      @keyframes image-caret-blink {
+        50% { opacity: 0; }
       }
 
       .tiptap p {

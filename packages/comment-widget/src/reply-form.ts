@@ -11,7 +11,7 @@ import { property, state } from 'lit/decorators.js';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
 import './base-form';
 import { msg } from '@lit/localize';
-import { FetchError, type FetchResponse, ofetch } from 'ofetch';
+import { FetchError, type FetchResponse } from 'ofetch';
 import type { BaseForm } from './base-form';
 import {
   allowAnonymousCommentsContext,
@@ -26,6 +26,11 @@ import {
   getCaptchaCodeHeader,
   isRequireCaptcha,
 } from './utils/captcha';
+import {
+  isPendingReview,
+  type SubmissionEvent,
+  submissionErrorMessage,
+} from './utils/submission';
 
 export class ReplyForm extends LitElement {
   @consume({ context: baseUrlContext })
@@ -77,11 +82,11 @@ export class ReplyForm extends LitElement {
       .captcha=${this.captcha}
       .hidePrivateCheckbox=${true}
       ${ref(this.baseFormRef)}
-      @submit="${this.onSubmit}"
+      @submit=${(e: SubmissionEvent) => e.detail.waitUntil(this.onSubmit(e))}
     ></base-form>`;
   }
 
-  async onSubmit(e: CustomEvent) {
+  async onSubmit(e: SubmissionEvent) {
     e.preventDefault();
 
     this.submitting = true;
@@ -124,20 +129,17 @@ export class ReplyForm extends LitElement {
     }
 
     try {
-      const newReply = await ofetch<Reply>(
+      const newReply = await data.uploadSession.submit<Reply>(
         `${this.baseUrl}/apis/api.halo.run/v1alpha1/comments/${this.comment?.metadata.name}/reply`,
-        {
-          method: 'POST',
-          headers: {
-            ...getCaptchaCodeHeader(data.captchaCode),
-          },
-          body: replyRequest,
-        }
+        replyRequest,
+        data.uploadIds,
+        getCaptchaCodeHeader(data.captchaCode ?? ''),
+        this.baseUrl
       );
 
       this.baseFormRef.value?.handleFetchCaptcha();
 
-      if (newReply.spec.approved) {
+      if (!isPendingReview(newReply)) {
         this.toastManager?.success(msg('Comment submitted successfully'));
       } else {
         this.toastManager?.success(
@@ -150,31 +152,34 @@ export class ReplyForm extends LitElement {
 
       this.baseFormRef.value?.resetForm();
     } catch (error) {
-      if (error instanceof FetchError) {
-        if (
-          isRequireCaptcha(
-            error.response as FetchResponse<CaptchaRequiredResponse>
-          )
-        ) {
-          const { captcha, detail } =
-            error.data as unknown as CaptchaRequiredResponse;
-          this.captcha = captcha;
-          this.toastManager?.warn(detail);
-          return;
-        }
-
-        const problemDetail = error.data as unknown as ProblemDetail;
-        this.toastManager?.error(
-          [problemDetail?.title, problemDetail?.detail].join(' - ') ||
-            msg('Comment failed, please try again later')
-        );
-        return;
-      }
-
-      this.toastManager?.error(msg('Comment failed, please try again later'));
+      this.reportSubmissionError(error);
     } finally {
       this.submitting = false;
     }
+  }
+  private reportSubmissionError(error: unknown) {
+    if (error instanceof FetchError) {
+      if (
+        isRequireCaptcha(
+          error.response as FetchResponse<CaptchaRequiredResponse>
+        )
+      ) {
+        const { captcha, detail } =
+          error.data as unknown as CaptchaRequiredResponse;
+        this.captcha = captcha;
+        this.toastManager?.warn(detail);
+        return;
+      }
+
+      const problemDetail = error.data as unknown as ProblemDetail;
+      this.toastManager?.error(
+        [problemDetail?.title, problemDetail?.detail].join(' - ') ||
+          msg('Comment failed, please try again later')
+      );
+      return;
+    }
+
+    this.toastManager?.error(submissionErrorMessage(error));
   }
 }
 
