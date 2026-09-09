@@ -49,6 +49,8 @@ public interface SettingConfigGetter {
 
         private boolean anonymousCommentCaptcha;
 
+        private boolean authenticatedCommentCaptcha;
+
         @Getter(onMethod_ = @NonNull)
         private CaptchaType type = CaptchaType.ALPHANUMERIC;
 

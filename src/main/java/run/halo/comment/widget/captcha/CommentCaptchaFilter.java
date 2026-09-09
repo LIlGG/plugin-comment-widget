@@ -53,14 +53,14 @@ public class CommentCaptchaFilter implements AdditionalWebFilter {
             .filter(ServerWebExchangeMatcher.MatchResult::isMatch)
             .flatMap(result -> settingConfigGetter.getSecurityConfig())
             .map(SettingConfigGetter.SecurityConfig::getCaptcha)
-            .filterWhen(captchaConfig -> isAnonymousCommenter(exchange))
-            .switchIfEmpty(chain.filter(exchange).then(Mono.empty()))
-            .flatMap(captchaConfig -> {
-                if (!captchaConfig.isAnonymousCommentCaptcha()) {
-                    return chain.filter(exchange);
-                }
-                return validateCaptcha(exchange, chain, captchaConfig);
-            });
+            .filterWhen(captchaConfig -> isAnonymousCommenter(exchange)
+                .map(anonymous -> anonymous
+                    ? captchaConfig.isAnonymousCommentCaptcha()
+                    : captchaConfig.isAuthenticatedCommentCaptcha()))
+            .flatMap(captchaConfig -> validateCaptcha(exchange, chain, captchaConfig)
+                .thenReturn(true))
+            .switchIfEmpty(Mono.defer(() -> chain.filter(exchange).thenReturn(false)))
+            .then();
     }
 
     private Mono<Void> sendCaptchaRequiredResponse(ServerWebExchange exchange,

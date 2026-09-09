@@ -18,6 +18,7 @@ interface BasicConfig {
 interface SecurityConfig {
   captcha: {
     anonymousCommentCaptcha: boolean;
+    authenticatedCommentCaptcha?: boolean;
     type: 'ALPHANUMERIC' | 'ARITHMETIC';
     ignoreCase: boolean;
     captchaLength: number;

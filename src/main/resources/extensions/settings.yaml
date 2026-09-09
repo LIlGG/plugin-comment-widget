@@ -74,9 +74,16 @@ spec:
               id: anonymousCommentCaptcha
               key: anonymousCommentCaptcha
               value: false
+            - $formkit: checkbox
+              label: 登录用户评论需要验证码
+              name: authenticatedCommentCaptcha
+              id: authenticatedCommentCaptcha
+              key: authenticatedCommentCaptcha
+              help: 开启后，所有已登录用户提交评论或回复时都需要验证码
+              value: false
             - $formkit: select
               label: 验证码类型
-              if: "$get(anonymousCommentCaptcha).value === true"
+              if: "$get(anonymousCommentCaptcha).value === true || $get(authenticatedCommentCaptcha).value === true"
               name: type
               id: type
               value: "ALPHANUMERIC"

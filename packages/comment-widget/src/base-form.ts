@@ -92,10 +92,12 @@ export class BaseForm extends LitElement {
   }
 
   get showCaptcha() {
+    const captcha = this.configMapData?.security?.captcha;
+    if (this.currentUser) {
+      return captcha?.authenticatedCommentCaptcha === true;
+    }
     return (
-      this.configMapData?.security.captcha.anonymousCommentCaptcha &&
-      !this.currentUser &&
-      this.allowAnonymousComments
+      captcha?.anonymousCommentCaptcha === true && this.allowAnonymousComments
     );
   }
 
