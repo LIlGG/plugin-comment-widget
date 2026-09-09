@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -27,6 +28,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebInputException;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import run.halo.app.extension.Metadata;
 
@@ -75,6 +77,107 @@ class UploadSubmissionFilterTest {
         sm.setName(id);
         submission.setMetadata(sm);
         when(service.reserve(any(), any(), any(), any(), any(), any())).thenReturn(submission);
+    }
+
+    @Test
+    void bindsLargeResponseWithoutApplyingTheRequestDecoderLimit() {
+        managed();
+        codecs.defaultCodecs().maxInMemorySize(256);
+        var exchange = exchange();
+        String response =
+            "{\"spec\":{\"content\":\"" +
+            "hello你好".repeat(100_000) +
+            "\"},\"metadata\":{\"labels\":{\"kind\":\"unrelated\"},\"name\":\"created\"},\"kind\":\"Comment\"}";
+        var bytes = response.getBytes(StandardCharsets.UTF_8);
+        doAnswer(call -> {
+            assertThat(exchange.getResponse().isCommitted()).isFalse();
+            return null;
+        })
+            .when(service)
+            .bind(any(), any(), any());
+        filter
+            .filter(exchange, e -> {
+                e.getResponse().setStatusCode(HttpStatus.OK);
+                return e.getResponse().writeWith(
+                    Flux.range(0, (bytes.length + 1023) / 1024).map(index ->
+                        e
+                            .getResponse()
+                            .bufferFactory()
+                            .wrap(
+                                Arrays.copyOfRange(
+                                    bytes,
+                                    index * 1024,
+                                    Math.min(bytes.length, (index + 1) * 1024)
+                                )
+                            )
+                    )
+                );
+            })
+            .block();
+        verify(service).bind(id, "Comment", "created");
+        verify(service, never()).unknown(any());
+        assertThat(exchange.getResponse().getBodyAsString().block()).isEqualTo(response);
+    }
+
+    @Test
+    void bindsReplyFromFlushedResponseChunks() {
+        managed();
+        var exchange = mockExchange(
+            MockServerHttpRequest.post("/apis/api.halo.run/v1alpha1/comments/parent/reply")
+                .header(UploadIdentity.TOKEN_HEADER, "a".repeat(64))
+                .header(UploadIdentity.SUBMISSION_HEADER, id)
+                .header("X-Comment-Uploads", "upload")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"content\":\"<img src='https://example.com/a.png'>\"}")
+        );
+        String first = "{\"metadata\":{\"name\":\"reply-created\"},";
+        String last = "\"kind\":\"Reply\"}";
+        filter
+            .filter(exchange, e -> {
+                e.getResponse().setStatusCode(HttpStatus.CREATED);
+                var chunks = Flux.just(first, last).map(text ->
+                    Mono.just(
+                        e.getResponse().bufferFactory().wrap(text.getBytes(StandardCharsets.UTF_8))
+                    )
+                );
+                return e.getResponse().writeAndFlushWith(chunks);
+            })
+            .block();
+        verify(service).bind(id, "Reply", "reply-created");
+        assertThat(exchange.getResponse().getBodyAsString().block()).isEqualTo(first + last);
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+        strings = {
+            "{\"kind\":{\"kind\":\"Comment\",\"metadata\":{\"name\":\"forged\"}}}",
+            "{\"kind\":\"Comment\",\"metadata\":{\"name\":{\"name\":\"forged\"}}}",
+            "{\"kind\":\"Reply\",\"metadata\":{\"name\":\"wrong-kind\"}}",
+            "{\"kind\":\"Comment\",\"metadata\":{\"name\":\"created\"},\"spec\":",
+        }
+    )
+    void invalidResponseCannotBindAnUnverifiedTarget(String response) {
+        managed();
+        var exchange = exchange();
+        assertThatThrownBy(() ->
+            filter
+                .filter(exchange, e -> {
+                    e.getResponse().setStatusCode(HttpStatus.OK);
+                    return e
+                        .getResponse()
+                        .writeWith(
+                            Mono.just(
+                                e
+                                    .getResponse()
+                                    .bufferFactory()
+                                    .wrap(response.getBytes(StandardCharsets.UTF_8))
+                            )
+                        );
+                })
+                .block()
+        ).isInstanceOf(IllegalStateException.class);
+        verify(service, never()).bind(any(), any(), any());
+        verify(service).unknown(id);
     }
 
     @Test

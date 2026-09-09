@@ -1,12 +1,14 @@
 package run.halo.comment.widget.upload;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.reactivestreams.Publisher;
 import org.springframework.core.io.buffer.DataBuffer;
-import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.http.server.reactive.ServerHttpResponseDecorator;
@@ -22,7 +24,6 @@ final class UploadSubmissionResponse extends ServerHttpResponseDecorator {
     private final ObjectMapper mapper;
     private final String submissionId;
     private final String targetKind;
-    private final int memoryLimit;
     private final AtomicBoolean handled = new AtomicBoolean();
 
     UploadSubmissionResponse(
@@ -30,38 +31,35 @@ final class UploadSubmissionResponse extends ServerHttpResponseDecorator {
         UploadLifecycleService lifecycle,
         ObjectMapper mapper,
         String submissionId,
-        String targetKind,
-        int memoryLimit
+        String targetKind
     ) {
         super(response);
         this.lifecycle = lifecycle;
         this.mapper = mapper;
         this.submissionId = submissionId;
         this.targetKind = targetKind;
-        this.memoryLimit = memoryLimit;
     }
 
     @Override
     public Mono<Void> writeWith(Publisher<? extends DataBuffer> body) {
-        return DataBufferUtils.join(Flux.from(body), memoryLimit).flatMap(this::recordAndWrite);
+        return UploadResponseBody.use(body, this::recordAndWrite);
     }
 
-    private Mono<Void> recordAndWrite(DataBuffer data) {
-        byte[] bytes = UploadSubmissionFilter.read(data);
+    private Mono<Void> recordAndWrite(UploadResponseBody body) {
         return UploadSubmissionFilter.work(() -> {
-            recordOutcome(bytes);
+            recordOutcome(body);
             handled.set(true);
-        }).then(super.writeWith(Mono.just(bufferFactory().wrap(bytes))));
+        }).then(super.writeWith(body.read(bufferFactory())));
     }
 
-    private void recordOutcome(byte[] bytes) {
+    private void recordOutcome(UploadResponseBody body) {
         var status = getStatusCode();
         if (status == null) {
             lifecycle.unknown(submissionId);
             return;
         }
         if (status.is2xxSuccessful()) {
-            bindCreatedTarget(bytes);
+            bindCreatedTarget(body);
             return;
         }
         if (isRejected(status)) {
@@ -71,20 +69,76 @@ final class UploadSubmissionResponse extends ServerHttpResponseDecorator {
         lifecycle.unknown(submissionId);
     }
 
-    private void bindCreatedTarget(byte[] bytes) {
+    private void bindCreatedTarget(UploadResponseBody body) {
         try {
-            var result = mapper.readTree(bytes);
-            if (!targetKind.equals(result.path("kind").asText())) {
-                throw new IllegalStateException("Invalid comment response");
+            if (Files.size(body.path()) == 0) {
+                lifecycle.unknown(submissionId);
+                return;
             }
-            String name = result.path("metadata").path("name").asText();
-            if (name.isBlank()) {
-                throw new IllegalStateException("Invalid comment response");
+            try (var parser = mapper.getFactory().createParser(body.path().toFile())) {
+                String name = readTargetName(parser);
+                lifecycle.bind(submissionId, targetKind, name);
             }
-            lifecycle.bind(submissionId, targetKind, name);
         } catch (IOException error) {
             throw new IllegalStateException(error);
         }
+    }
+
+    private String readTargetName(JsonParser parser) throws IOException {
+        if (parser.nextToken() != JsonToken.START_OBJECT) {
+            throw new IllegalStateException("Invalid comment response");
+        }
+        String kind = null;
+        String name = null;
+        while (parser.nextToken() == JsonToken.FIELD_NAME) {
+            String field = parser.currentName();
+            parser.nextToken();
+            if ("kind".equals(field)) {
+                kind = readString(parser);
+                continue;
+            }
+            if ("metadata".equals(field)) {
+                name = readMetadataName(parser);
+                continue;
+            }
+            parser.skipChildren();
+        }
+        if (!targetKind.equals(kind)) {
+            throw new IllegalStateException("Invalid comment response");
+        }
+        if (name == null) {
+            throw new IllegalStateException("Invalid comment response");
+        }
+        if (name.isBlank()) {
+            throw new IllegalStateException("Invalid comment response");
+        }
+        return name;
+    }
+
+    private String readMetadataName(JsonParser parser) throws IOException {
+        if (parser.currentToken() != JsonToken.START_OBJECT) {
+            parser.skipChildren();
+            return null;
+        }
+        String name = null;
+        while (parser.nextToken() == JsonToken.FIELD_NAME) {
+            String field = parser.currentName();
+            parser.nextToken();
+            if ("name".equals(field)) {
+                name = readString(parser);
+                continue;
+            }
+            parser.skipChildren();
+        }
+        return name;
+    }
+
+    private String readString(JsonParser parser) throws IOException {
+        if (parser.currentToken() != JsonToken.VALUE_STRING) {
+            parser.skipChildren();
+            return null;
+        }
+        return parser.getText();
     }
 
     @Override

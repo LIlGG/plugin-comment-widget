@@ -74,6 +74,34 @@ public class UploadLifecycleService {
         return upload;
     }
 
+    /** Only called for a storage policy rejection before an attachment was created. */
+    public void discardRejectedUpload(String id) {
+        UploadRetries.run(5, () -> discardRejectedUploadOnce(id));
+    }
+
+    private void discardRejectedUploadOnce(String id) {
+        var found = client.fetch(CommentUpload.class, id);
+        if (found.isEmpty()) {
+            return;
+        }
+        var upload = found.get();
+        if (upload.getSpec().getState() != UPLOADING) {
+            return;
+        }
+        if (upload.getSpec().getAttachmentName() != null) {
+            return;
+        }
+        var attachments = client.listBy(
+            Attachment.class,
+            UploadMetadata.matching(CommentUpload.LABEL, id),
+            PageRequestImpl.ofSize(1)
+        );
+        if (attachments.getTotal() > 0) {
+            return;
+        }
+        client.delete(upload);
+    }
+
     private <E extends Extension> ListResult<E> byCredential(Class<E> type, String hash) {
         return client.listBy(
             type,

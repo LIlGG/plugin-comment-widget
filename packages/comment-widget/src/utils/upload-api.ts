@@ -1,6 +1,10 @@
 import { ofetch } from 'ofetch';
 import type { UploadedImage, UploadSession } from './upload-session';
 
+export type FileUploadResult =
+  | UploadedImage
+  | { error: { status: number; message: string } };
+
 type ErrorResponse = {
   title?: string;
   detail?: string;
@@ -15,7 +19,7 @@ export async function uploadFiles(
   files: File[],
   session: UploadSession,
   baseUrl?: string
-): Promise<UploadedImage[]> {
+): Promise<FileUploadResult[]> {
   try {
     const formData = new FormData();
     files.forEach((file) => {

@@ -1,7 +1,11 @@
 import { type Editor, Extension } from '@tiptap/core';
 import Image from '@tiptap/extension-image';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { renderImage, resetUploadSession } from './uploaded-images';
+import {
+  imageUploadState,
+  renderImage,
+  resetUploadSession,
+} from './uploaded-images';
 
 export {
   resetUploadSession,
@@ -81,6 +85,8 @@ export const EditorUpload = Extension.create<EditorUploadOptions>({
       new Plugin({
         key: new PluginKey('upload'),
         props: {
+          transformPasted: (slice) =>
+            imageUploadState(editor).restorePasted(slice),
           handlePaste: (_view, event) =>
             handlePaste(event, editor, this.options.enabled),
           handleDrop: (_view, event) =>

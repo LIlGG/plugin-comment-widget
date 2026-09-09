@@ -162,6 +162,29 @@ class UploadLifecycleTest {
     }
 
     @Test
+    void rejectedUploadsReleaseTheirDraftQuota() {
+        for (int i = 0; i < 25; i++) {
+            var upload = service.begin(hash, owner);
+            service.discardRejectedUpload(upload.getMetadata().getName());
+            assertThat(client.fetch(CommentUpload.class, upload.getMetadata().getName())).isEmpty();
+        }
+        assertThat(service.begin(hash, owner)).isNotNull();
+    }
+
+    @Test
+    void rejectionCleanupKeepsAnyCreatedAttachmentAnchor() {
+        var upload = service.begin(hash, owner);
+        var attachment = new Attachment();
+        var metadata = new Metadata();
+        metadata.setName("already-created");
+        metadata.setLabels(Map.of(CommentUpload.LABEL, upload.getMetadata().getName()));
+        attachment.setMetadata(metadata);
+        save(attachment);
+        service.discardRejectedUpload(upload.getMetadata().getName());
+        assertThat(client.fetch(CommentUpload.class, upload.getMetadata().getName())).isPresent();
+    }
+
+    @Test
     void bindingRetriesAnOptimisticConflictWithoutDuplicatingTheComment() throws Exception {
         var u = uploaded();
         var submission = reserve(u);

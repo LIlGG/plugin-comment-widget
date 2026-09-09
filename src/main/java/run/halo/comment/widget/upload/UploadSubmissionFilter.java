@@ -100,7 +100,7 @@ public class UploadSubmissionFilter implements AfterSecurityWebFilter {
     ) {
         var request = replayRequest(exchange, bytes);
         return prepare(exchange, bytes, decoder, contentType).flatMap(prepared ->
-            forward(exchange, chain, request, prepared, decoder.getMaxInMemorySize())
+            forward(exchange, chain, request, prepared)
         );
     }
 
@@ -119,8 +119,7 @@ public class UploadSubmissionFilter implements AfterSecurityWebFilter {
         ServerWebExchange exchange,
         WebFilterChain chain,
         ServerHttpRequest request,
-        Prepared prepared,
-        int memoryLimit
+        Prepared prepared
     ) {
         if (prepared.submission() == null) {
             return chain.filter(exchange.mutate().request(request).build());
@@ -131,8 +130,7 @@ public class UploadSubmissionFilter implements AfterSecurityWebFilter {
             lifecycle,
             mapper,
             id,
-            targetKind(exchange),
-            memoryLimit
+            targetKind(exchange)
         );
         var decorated = exchange.mutate().request(request).response(response).build();
         // Cleanup runs for completion, error and cancellation without releasing uncertain uploads.

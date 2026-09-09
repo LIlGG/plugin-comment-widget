@@ -3,12 +3,24 @@ import Image from '@tiptap/extension-image';
 import type { Node } from '@tiptap/pm/model';
 import { ToastManager } from '../lit-toast';
 import { uploadFiles } from '../utils/upload-api';
+import { applyUploadResults } from '../utils/upload-results';
 import { type UploadedImage, UploadSession } from '../utils/upload-session';
+import { ImageUploadState } from './image-upload-state';
 
 type FileProps = { file: File; editor: Editor };
 
 const blobUrls = new WeakMap<Editor, Set<string>>();
 const sessions = new WeakMap<Editor, UploadSession>();
+const imageStates = new WeakMap<Editor, ImageUploadState>();
+
+export function imageUploadState(editor: Editor) {
+  let state = imageStates.get(editor);
+  if (!state) {
+    state = new ImageUploadState();
+    imageStates.set(editor, state);
+  }
+  return state;
+}
 export function uploadSession(editor: Editor): UploadSession {
   let session = sessions.get(editor);
   if (!session) {
@@ -19,6 +31,7 @@ export function uploadSession(editor: Editor): UploadSession {
 }
 export function resetUploadSession(editor: Editor) {
   sessions.delete(editor);
+  imageStates.delete(editor);
   blobUrls.get(editor)?.forEach((url) => {
     URL.revokeObjectURL(url);
   });
@@ -41,6 +54,7 @@ function getFileBlobUrl(file: File) {
 export function renderImage({ file, editor }: FileProps) {
   const { view } = editor;
   const blobUrl = getFileBlobUrl(file);
+  imageUploadState(editor).rememberLocal(blobUrl, file);
   if (!blobUrls.has(editor)) {
     blobUrls.set(editor, new Set());
   }
@@ -89,9 +103,9 @@ async function uploadFileAndReplaceNode(
     if (attachments.length !== nodes.length) {
       throw new Error('上传结果不完整，请重试');
     }
-    for (const [index, attachment] of attachments.entries()) {
+    applyUploadResults(attachments, (index, attachment) => {
       replaceUploadedImage(editor, nodes[index], attachment);
-    }
+    });
     return true;
   } catch (error) {
     const toastManager = new ToastManager();
@@ -115,12 +129,24 @@ export async function uploadEditorFiles(
     return true;
   }
 
+  const restored = imageUploadState(editor).restoreUploaded(editor.state.tr);
+  if (restored.docChanged) {
+    editor.view.dispatch(restored.setMeta('addToHistory', false));
+  }
   const localNodes = getLocalNodes(editor);
   if (localNodes.length === 0) {
     return true;
   }
 
-  return await uploadFileAndReplaceNode(editor, localNodes, baseUrl);
+  const uniqueNodes = new Map<string, LocalNode>();
+  for (const node of localNodes) {
+    uniqueNodes.set(node.node.attrs.src, node);
+  }
+  return await uploadFileAndReplaceNode(
+    editor,
+    [...uniqueNodes.values()],
+    baseUrl
+  );
 }
 
 function replaceUploadedImage(
@@ -131,6 +157,10 @@ function replaceUploadedImage(
   if (!original || editor.isDestroyed) {
     return;
   }
+  imageUploadState(editor).rememberUploaded(
+    original.node.attrs.src,
+    attachment
+  );
   // Locate by blob URL again: positions may have moved during the upload.
   const matches: number[] = [];
   editor.state.doc.descendants((node, pos) => {

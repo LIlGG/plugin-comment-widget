@@ -112,7 +112,12 @@ class UploadMediaEndpointTest {
                 return Mono.error(rejection);
             }
         );
-        assertThatThrownBy(() -> upload(request(300 * 1024, 1)).block()).isSameAs(rejection);
+        var results = upload(request(300 * 1024, 1)).block();
+        assertThat(results.getFirst().error().status()).isEqualTo(400);
+        assertThat(results.getFirst().error().message()).isEqualTo("Storage policy rejects type");
+        org.mockito.Mockito.verify(lifecycle, org.mockito.Mockito.never()).discardRejectedUpload(
+            any()
+        );
         assertTemporaryPartDeleted();
     }
 
@@ -145,6 +150,67 @@ class UploadMediaEndpointTest {
             subscription.dispose();
         }
         await().atMost(Duration.ofSeconds(5)).untilAsserted(this::assertTemporaryPartDeleted);
+    }
+
+    @Test
+    void returnsSuccessfulFilesWhenAnotherFileFails() {
+        when(attachments.upload(any(), any(), any(), any(FilePart.class), any()))
+            .thenReturn(Mono.just(attachment))
+            .thenReturn(Mono.error(new PolicyRejection()))
+            .thenReturn(Mono.just(attachment));
+        var results = upload(request(1, 3)).block();
+        assertThat(results).hasSize(3);
+        assertThat(results.get(0).uploadId()).isEqualTo("upload-id");
+        assertThat(results.get(1).error().status()).isEqualTo(415);
+        assertThat(results.get(2).uploadId()).isEqualTo("upload-id");
+        verify(lifecycle).discardRejectedUpload("upload-id");
+    }
+
+    @Test
+    void preservesResultsBeforeDraftQuotaIsReached() {
+        var record = new CommentUpload();
+        var metadata = new Metadata();
+        metadata.setName("upload-id");
+        record.setMetadata(metadata);
+        record.setSpec(new CommentUpload.Spec());
+        var attempts = new java.util.concurrent.atomic.AtomicInteger();
+        when(lifecycle.begin("draft", "alice")).thenAnswer(invocation -> {
+            if (attempts.incrementAndGet() > 20) {
+                throw new ResponseStatusException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "Draft upload limit reached"
+                );
+            }
+            return record;
+        });
+        var results = upload(request(1, 21)).block();
+        assertThat(results).hasSize(21);
+        assertThat(results.subList(0, 20)).allMatch(image -> image.uploadId() != null);
+        assertThat(results.get(20).error().status()).isEqualTo(429);
+    }
+
+    @Test
+    void preservesUnknownStorageFailuresForRecovery() {
+        when(attachments.upload(any(), any(), any(), any(FilePart.class), any())).thenReturn(
+            Mono.error(new IllegalStateException("uncertain storage write"))
+        );
+        assertThat(upload(request(1, 1)).block().getFirst().error().status()).isEqualTo(500);
+        org.mockito.Mockito.verify(lifecycle, org.mockito.Mockito.never()).discardRejectedUpload(
+            any()
+        );
+    }
+
+    private static class PolicyRejection extends ResponseStatusException {
+
+        PolicyRejection() {
+            super(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                "File type is not allowed",
+                null,
+                "problemDetail.attachment.upload.fileTypeNotSupported",
+                null
+            );
+        }
     }
 
     private Mono<Attachment> receive(FilePart file) {

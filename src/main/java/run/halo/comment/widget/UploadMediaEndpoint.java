@@ -5,6 +5,7 @@ import static org.springdoc.core.fn.builders.content.Builder.contentBuilder;
 import static org.springdoc.core.fn.builders.requestbody.Builder.requestBodyBuilder;
 import static org.springframework.web.reactive.function.server.RequestPredicates.contentType;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import io.github.resilience4j.reactor.ratelimiter.operator.RateLimiterOperator;
@@ -27,6 +28,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.stereotype.Component;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
@@ -203,8 +205,19 @@ public class UploadMediaEndpoint implements CustomEndpoint {
         }
         return authenticationConsumerNullable(authentication ->
             Flux.fromIterable(files)
-                .concatMap(file -> beginAndUpload(file, settings, hash, authentication.getName()))
+                .concatMap(file -> uploadOne(file, settings, hash, authentication.getName()))
                 .collectList()
+        );
+    }
+
+    private Mono<UploadedImage> uploadOne(
+        FilePart file,
+        SettingConfigGetter.UploadConfig.UploadAttachment settings,
+        String hash,
+        String owner
+    ) {
+        return beginAndUpload(file, settings, hash, owner).onErrorResume(error ->
+            Mono.just(UploadedImage.failed(error))
         );
     }
 
@@ -233,9 +246,40 @@ public class UploadMediaEndpoint implements CustomEndpoint {
                 file,
                 attachment -> markAttachment(attachment, record.getMetadata().getName())
             )
+            .onErrorResume(error -> handleStorageRejection(record, error))
             .flatMap(attachment -> recordAttachment(record.getMetadata().getName(), attachment))
             .flatMap(this::setPermalinkToAttachment)
             .flatMap(attachment -> completeUpload(record, attachment));
+    }
+
+    private Mono<Attachment> handleStorageRejection(CommentUpload record, Throwable error) {
+        if (!isStorageRejection(error)) {
+            return Mono.error(error);
+        }
+        return Mono.fromRunnable(() ->
+            lifecycle.discardRejectedUpload(record.getMetadata().getName())
+        )
+            .subscribeOn(Schedulers.boundedElastic())
+            .doOnError(cleanupError ->
+                log.warn(
+                    "Failed to reclaim rejected upload {}",
+                    record.getMetadata().getName(),
+                    cleanupError
+                )
+            )
+            .onErrorComplete()
+            .then(Mono.error(error));
+    }
+
+    private boolean isStorageRejection(Throwable error) {
+        if (!(error instanceof ErrorResponse response)) {
+            return false;
+        }
+        return Set.of(
+            "problemDetail.attachment.upload.fileSizeExceeded",
+            "problemDetail.attachment.upload.fileTypeNotMatch",
+            "problemDetail.attachment.upload.fileTypeNotSupported"
+        ).contains(response.getDetailMessageCode());
     }
 
     private void markAttachment(Attachment attachment, String uploadId) {
@@ -261,7 +305,34 @@ public class UploadMediaEndpoint implements CustomEndpoint {
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
-    public record UploadedImage(String uploadId, String url, Instant expiresAt) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record UploadedImage(String uploadId, String url, Instant expiresAt, UploadError error) {
+        public UploadedImage(String uploadId, String url, Instant expiresAt) {
+            this(uploadId, url, expiresAt, null);
+        }
+
+        static UploadedImage failed(Throwable error) {
+            if (error instanceof ErrorResponse response) {
+                return new UploadedImage(
+                    null,
+                    null,
+                    null,
+                    new UploadError(
+                        response.getStatusCode().value(),
+                        response.getBody().getDetail()
+                    )
+                );
+            }
+            return new UploadedImage(
+                null,
+                null,
+                null,
+                new UploadError(500, "Upload failed; please retry later")
+            );
+        }
+    }
+
+    public record UploadError(int status, String message) {}
 
     /**
      * Set the permanent link of the attachment.
