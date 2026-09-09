@@ -85,6 +85,57 @@ class UploadMediaEndpointTest {
     }
 
     @Test
+    void uploadsAsAnonymousWhenSecurityContextIsAbsent() {
+        var record = new CommentUpload();
+        var metadata = new Metadata();
+        metadata.setName("anonymous-upload");
+        record.setMetadata(metadata);
+        record.setSpec(new CommentUpload.Spec());
+        when(lifecycle.begin("draft", "anonymousUser")).thenReturn(record);
+        when(
+            attachments.upload(
+                eq("anonymousUser"),
+                eq("selected-policy"),
+                eq("selected-group"),
+                any(FilePart.class),
+                any()
+            )
+        ).thenAnswer(invocation -> receive(invocation.getArgument(3)));
+
+        Mono<List<UploadMediaEndpoint.UploadedImage>> result = ReflectionTestUtils.invokeMethod(
+            endpoint,
+            "readAndUpload",
+            request(300 * 1024, 1),
+            "draft",
+            config
+        );
+
+        assertThat(result.block()).singleElement().satisfies(image -> {
+            assertThat(image.uploadId()).isEqualTo("anonymous-upload");
+            assertThat(image.url()).isEqualTo("/image.avif");
+            assertThat(image.error()).isNull();
+        });
+        verify(lifecycle).uploaded("anonymous-upload", attachment, "/image.avif");
+        assertTemporaryPartDeleted();
+    }
+
+    @Test
+    void rejectsMissingSecurityContextWhenAnonymousUploadIsDisabled() {
+        config.getUpload().setAllowAnonymous(false);
+        Mono<Void> permission = ReflectionTestUtils.invokeMethod(
+            endpoint,
+            "validateUploadPermission",
+            config
+        );
+
+        assertThatThrownBy(permission::block).isInstanceOfSatisfying(
+            ResponseStatusException.class,
+            error -> assertThat(error.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED)
+        );
+        verifyNoInteractions(attachments, lifecycle);
+    }
+
+    @Test
     void delegatesLargeAvifToSelectedStoragePolicyWithoutRewriting() {
         var result = upload(request(11 * 1024 * 1024, 1)).block(Duration.ofSeconds(10));
         assertThat(result).hasSize(1);

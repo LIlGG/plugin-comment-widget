@@ -13,7 +13,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -24,9 +23,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.http.codec.multipart.Part;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
-import org.springframework.security.core.context.SecurityContext;
 import org.springframework.stereotype.Component;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.reactive.function.server.RouterFunction;
@@ -203,9 +200,9 @@ public class UploadMediaEndpoint implements CustomEndpoint {
         if (StringUtils.isBlank(settings.getAttachmentPolicy())) {
             return Mono.error(new ServerWebInputException("Please configure the upload policy"));
         }
-        return authenticationConsumerNullable(authentication ->
+        return UploadIdentity.currentOwner().flatMap(owner ->
             Flux.fromIterable(files)
-                .concatMap(file -> uploadOne(file, settings, hash, authentication.getName()))
+                .concatMap(file -> uploadOne(file, settings, hash, owner))
                 .collectList()
         );
     }
@@ -369,12 +366,6 @@ public class UploadMediaEndpoint implements CustomEndpoint {
             );
         }
         return RateLimiterOperator.of(rateLimiter);
-    }
-
-    <T> Mono<T> authenticationConsumerNullable(Function<Authentication, Mono<T>> func) {
-        return ReactiveSecurityContextHolder.getContext()
-            .map(SecurityContext::getAuthentication)
-            .flatMap(func);
     }
 
     Mono<Boolean> isAnonymousCommenter() {
