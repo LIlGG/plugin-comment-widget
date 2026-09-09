@@ -85,6 +85,31 @@ class UploadMediaEndpointTest {
     }
 
     @Test
+    void disabledUploadRejectsBeforeValidatingCredentials() {
+        config.setEnableUpload(false);
+        for (String token : List.of("", "invalid", "a".repeat(64))) {
+            var builder = org.springframework.mock.web.reactive.function.server.MockServerRequest
+                .builder();
+            if (!token.isEmpty()) {
+                builder.header("X-Comment-Upload-Token", token);
+            }
+            assertThatThrownBy(() -> {
+                Mono<?> result = ReflectionTestUtils.invokeMethod(
+                    endpoint,
+                    "uploadWithConfig",
+                    builder.build(),
+                    config
+                );
+                result.block();
+            }).isInstanceOfSatisfying(ResponseStatusException.class, error -> {
+                assertThat(error.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                assertThat(error.getReason()).isEqualTo("File upload feature is not enabled");
+            });
+        }
+        verifyNoInteractions(attachments, lifecycle);
+    }
+
+    @Test
     void uploadsAsAnonymousWhenSecurityContextIsAbsent() {
         var record = new CommentUpload();
         var metadata = new Metadata();

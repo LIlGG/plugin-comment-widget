@@ -76,7 +76,7 @@ public class UploadMediaEndpoint implements CustomEndpoint {
                                     )
                             )
                     )
-                    .response(responseBuilder().implementation(UploadedImage.class))
+                    .response(responseBuilder().implementationArray(UploadedImage.class))
                     .build()
             )
             .build();
@@ -98,9 +98,6 @@ public class UploadMediaEndpoint implements CustomEndpoint {
         ServerRequest request,
         SettingConfigGetter.EditorConfig config
     ) {
-        var hash = UploadIdentity.credential(
-            request.headers().firstHeader(UploadIdentity.TOKEN_HEADER)
-        );
         if (!config.isEnableUpload()) {
             return Mono.error(
                 new ResponseStatusException(
@@ -109,6 +106,9 @@ public class UploadMediaEndpoint implements CustomEndpoint {
                 )
             );
         }
+        var hash = UploadIdentity.credential(
+            request.headers().firstHeader(UploadIdentity.TOKEN_HEADER)
+        );
         return validateUploadPermission(config).then(readAndUpload(request, hash, config));
     }
 

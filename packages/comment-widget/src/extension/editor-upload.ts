@@ -160,7 +160,7 @@ function handleFileEvent({ file, editor }: FileProps) {
     return true;
   }
 
-  return true;
+  return false;
 }
 
 function canUpload(editor: Editor, enabled: () => boolean) {
@@ -233,7 +233,9 @@ function handlePaste(
     return false;
   }
 
-  const files = Array.from(event.clipboardData.files);
+  const files = Array.from(event.clipboardData.files).filter((file) =>
+    file.type.startsWith('image/')
+  );
 
   if (files.length) {
     event.preventDefault();
@@ -258,14 +260,8 @@ function handleDrop(event: DragEvent, editor: Editor, enabled: () => boolean) {
     return false;
   }
 
+  // Prevent file drops from navigating away and losing the comment draft.
   event.preventDefault();
-
-  const files = Array.from(event.dataTransfer.files) as File[];
-  if (files.length) {
-    event.preventDefault();
-    handleFiles(files, editor);
-    return true;
-  }
-
-  return false;
+  handleFiles(Array.from(event.dataTransfer.files), editor);
+  return true;
 }
