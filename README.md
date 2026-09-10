@@ -17,7 +17,9 @@ Halo 2.0 的通用评论组件插件，为前台提供完整的评论解决方�
 
 在插件的「安全设置」中开启「匿名评论需要验证码」，选择 Cloudflare Turnstile，填写 Site Key，并通过密钥选择器保存包含 `secretKey` 字段的 Secret Key。密钥可在 [Cloudflare Turnstile 控制台](https://developers.cloudflare.com/turnstile/get-started/)创建，请将站点域名加入允许列表。
 
-匿名评论和回复会先完成人机验证，再由 Halo 服务端向 Cloudflare 校验。验证过期、失败或服务暂不可用时，需要重新验证；已登录用户沿用现有免验证码规则。
+匿名评论和回复会先完成人机验证，再由 Halo 服务端向 Cloudflare 校验。自动验证期间显示等待状态，需要人工操作时提示完成人机验证；人工操作期间不会因插件的自动验证超时而取消提交，验证成功后继续提交。验证过期、失败或服务暂不可用时，需要重新验证；已登录用户沿用现有免验证码规则。
+
+密钥配置异常和验证服务暂不可用会显示不同提示，管理员可通过 Halo 日志查看固定错误码或异常类型；日志不会记录密钥和验证令牌。
 
 本地验收可使用 [Cloudflare 官方测试密钥](https://developers.cloudflare.com/turnstile/troubleshooting/testing/)，正式站点应换成自己的密钥。使用 CSP 的站点需按 [Cloudflare 文档](https://developers.cloudflare.com/turnstile/reference/content-security-policy/)允许验证脚本和 iframe。
 

@@ -3,6 +3,7 @@ import { css, html, LitElement } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { when } from 'lit/directives/when.js';
 import baseStyles from './styles/base';
+import { VerificationWait } from './utils/verification-wait';
 
 interface TurnstileApi {
   render(container: HTMLElement, options: Record<string, unknown>): string;
@@ -57,7 +58,9 @@ export class TurnstileCaptcha extends LitElement {
   @state() interactionRequired = false;
   private widgetId?: string;
   private generation = 0;
-  private finishWaiting?: (token: string) => void;
+  private verificationWait = new VerificationWait(() =>
+    this.failVerification()
+  );
 
   override connectedCallback() {
     super.connectedCallback();
@@ -104,7 +107,7 @@ export class TurnstileCaptcha extends LitElement {
           this.setInteractionRequired(false);
           this.token = token;
           this.failed = false;
-          this.finishWaiting?.(token);
+          this.verificationWait.finish(token);
         },
         'expired-callback': () => {
           this.token = '';
@@ -125,6 +128,7 @@ export class TurnstileCaptcha extends LitElement {
 
   private setInteractionRequired(required: boolean) {
     this.interactionRequired = required;
+    this.verificationWait.setInteractive(required);
     this.dispatchEvent(
       new CustomEvent<boolean>('interaction-required-change', {
         detail: required,
@@ -136,7 +140,7 @@ export class TurnstileCaptcha extends LitElement {
     this.setInteractionRequired(false);
     this.token = '';
     this.failed = true;
-    this.finishWaiting?.('');
+    this.verificationWait.finish('');
   }
 
   waitForToken(): Promise<string> {
@@ -149,20 +153,12 @@ export class TurnstileCaptcha extends LitElement {
     if (!this.isConnected) {
       return Promise.resolve('');
     }
-    this.finishWaiting?.('');
-    return new Promise((resolve) => {
-      const timeout = window.setTimeout(() => this.failVerification(), 60000);
-      this.finishWaiting = (token) => {
-        window.clearTimeout(timeout);
-        this.finishWaiting = undefined;
-        resolve(token);
-      };
-    });
+    return this.verificationWait.wait(this.interactionRequired);
   }
 
   reset() {
     this.setInteractionRequired(false);
-    this.finishWaiting?.('');
+    this.verificationWait.finish('');
     this.failed = false;
     this.token = '';
     if (this.widgetId !== undefined) {
@@ -172,7 +168,7 @@ export class TurnstileCaptcha extends LitElement {
 
   private removeWidget() {
     this.setInteractionRequired(false);
-    this.finishWaiting?.('');
+    this.verificationWait.finish('');
     this.token = '';
     if (this.widgetId !== undefined) {
       window.turnstile?.remove(this.widgetId);

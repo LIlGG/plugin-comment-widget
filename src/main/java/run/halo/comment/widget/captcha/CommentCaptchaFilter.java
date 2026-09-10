@@ -63,22 +63,32 @@ public class CommentCaptchaFilter implements AdditionalWebFilter {
                 if (captchaConfig.getType() == CaptchaType.TURNSTILE) {
                     return turnstileVerifier.verify(
                             exchange.getRequest().getHeaders().getFirst("X-Turnstile-Token"), captchaConfig)
-                        .flatMap(valid -> {
-                            if (valid) {
+                        .flatMap(result -> {
+                            if (result == TurnstileVerifier.Result.VALID) {
                                 return chain.filter(exchange);
                             }
-                            return sendTurnstileRequiredResponse(exchange);
+                            return sendTurnstileRequiredResponse(exchange, result);
                         });
                 }
                 return validateCaptcha(exchange, chain, captchaConfig);
             });
     }
 
-    private Mono<Void> sendTurnstileRequiredResponse(ServerWebExchange exchange) {
-        exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+    private Mono<Void> sendTurnstileRequiredResponse(ServerWebExchange exchange,
+                                                       TurnstileVerifier.Result result) {
+        var status = HttpStatus.FORBIDDEN;
+        var detail = "人机验证未通过，请重新验证后提交";
+        if (result == TurnstileVerifier.Result.CONFIGURATION_ERROR) {
+            status = HttpStatus.SERVICE_UNAVAILABLE;
+            detail = "人机验证配置异常，请联系站点管理员";
+        } else if (result == TurnstileVerifier.Result.UNAVAILABLE) {
+            status = HttpStatus.SERVICE_UNAVAILABLE;
+            detail = "人机验证服务暂不可用，请稍后重试";
+        }
+        exchange.getResponse().setStatusCode(status);
         addHeaderIfAbsent(exchange.getResponse().getHeaders(), CAPTCHA_REQUIRED_HEADER, "true");
         addHeaderIfAbsent(exchange.getResponse().getHeaders(), HttpHeaders.CONTENT_TYPE, CONTENT_TYPE);
-        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "人机验证未通过，请重新验证后提交");
+        var problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setType(URI.create(CAPTCHA_INVALID_TYPE));
         problem.setTitle("Turnstile Verification");
         var bytes = getResponseData(problem);
