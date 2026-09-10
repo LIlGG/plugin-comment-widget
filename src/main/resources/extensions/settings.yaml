@@ -87,6 +87,50 @@ spec:
                   value: "ARITHMETIC"
                 - label: Cloudflare Turnstile
                   value: "TURNSTILE"
+            - $el: div
+              if: "$get(anonymousCommentCaptcha).value === true && $get(type).value === TURNSTILE"
+              attrs:
+                class: "space-y-2 rounded-base bg-gray-50 p-4 text-sm text-gray-700"
+              children:
+                - $el: strong
+                  children: Cloudflare Turnstile 使用说明
+                - $el: p
+                  children: 在 Cloudflare 中创建 Turnstile 小组件，将站点域名加入允许列表，然后填写 Site Key，并在下方新建或选择包含 secretKey 字段的密钥，填入同一小组件的 Secret Key。
+                - $el: p
+                  children: 匿名评论和回复会自动进行验证，仅在需要人工确认时显示验证组件。点击提交后，完成验证即可继续发送；验证失败会保留输入内容。已登录用户无需验证。
+                - $el: p
+                  children: 如提示配置异常，请检查 Site Key、Secret Key 和允许的域名；管理员可通过 Halo 日志查看具体原因。
+                - $el: ul
+                  attrs:
+                    class: "list-inside list-disc space-y-1"
+                  children:
+                    - $el: li
+                      children:
+                        - $el: a
+                          attrs:
+                            href: https://developers.cloudflare.com/turnstile/get-started/
+                            target: _blank
+                            rel: noopener noreferrer
+                            class: underline
+                          children: Turnstile 创建与配置指南
+                    - $el: li
+                      children:
+                        - $el: a
+                          attrs:
+                            href: https://developers.cloudflare.com/turnstile/troubleshooting/testing/
+                            target: _blank
+                            rel: noopener noreferrer
+                            class: underline
+                          children: 本地测试密钥说明（正式站点请使用自己的密钥）
+                    - $el: li
+                      children:
+                        - $el: a
+                          attrs:
+                            href: https://developers.cloudflare.com/turnstile/reference/content-security-policy/
+                            target: _blank
+                            rel: noopener noreferrer
+                            class: underline
+                          children: 启用 CSP 时的脚本与 iframe 配置
             - $formkit: text
               if: "$get(type).value === TURNSTILE"
               name: turnstileSiteKey
