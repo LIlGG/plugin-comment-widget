@@ -1,5 +1,6 @@
 package run.halo.comment.widget;
 
+import java.util.Set;
 import lombok.Data;
 import lombok.Getter;
 import lombok.experimental.Accessors;
@@ -47,9 +48,15 @@ public interface SettingConfigGetter {
     @Accessors(chain = true)
     class CaptchaConfig {
 
-        private boolean anonymousCommentCaptcha;
+        private boolean enable;
 
-        private boolean authenticatedCommentCaptcha;
+        private CaptchaAudience audience = CaptchaAudience.ANONYMOUS;
+
+        private Set<String> roles = Set.of();
+
+        public enum CaptchaAudience {
+            ALL, ANONYMOUS, ROLES
+        }
 
         @Getter(onMethod_ = @NonNull)
         private CaptchaType type = CaptchaType.ALPHANUMERIC;

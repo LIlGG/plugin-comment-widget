@@ -9,6 +9,7 @@ import {
   baseUrlContext,
   configMapDataContext,
   currentUserContext,
+  currentUserRolesContext,
   groupContext,
   kindContext,
   nameContext,
@@ -34,6 +35,10 @@ export class BaseForm extends LitElement {
   @consume({ context: currentUserContext, subscribe: true })
   @state()
   currentUser: User | undefined;
+
+  @consume({ context: currentUserRolesContext, subscribe: true })
+  @state()
+  currentUserRoles: string[] = [];
 
   @consume({ context: configMapDataContext })
   @state()
@@ -93,18 +98,28 @@ export class BaseForm extends LitElement {
 
   get showCaptcha() {
     const captcha = this.configMapData?.security?.captcha;
-    if (this.currentUser) {
-      return captcha?.authenticatedCommentCaptcha === true;
+    if (
+      !captcha?.enable ||
+      (!this.currentUser && !this.allowAnonymousComments)
+    ) {
+      return false;
     }
-    return (
-      captcha?.anonymousCommentCaptcha === true && this.allowAnonymousComments
-    );
+    if (captcha.audience === 'ALL') {
+      return true;
+    }
+    if (captcha.audience === 'ROLES') {
+      return (captcha.roles ?? []).some((role) =>
+        this.currentUserRoles.includes(role)
+      );
+    }
+    return !this.currentUser;
   }
 
   override updated(changedProperties: Map<string, unknown>) {
     if (
       changedProperties.has('configMapData') ||
       changedProperties.has('currentUser') ||
+      changedProperties.has('currentUserRoles') ||
       changedProperties.has('allowAnonymousComments')
     ) {
       if (this.showCaptcha) {

@@ -69,21 +69,38 @@ spec:
             type: ALPHANUMERIC
           children:
             - $formkit: checkbox
-              label: 匿名评论需要验证码
-              name: anonymousCommentCaptcha
-              id: anonymousCommentCaptcha
-              key: anonymousCommentCaptcha
-              value: false
-            - $formkit: checkbox
-              label: 登录用户评论需要验证码
-              name: authenticatedCommentCaptcha
-              id: authenticatedCommentCaptcha
-              key: authenticatedCommentCaptcha
-              help: 开启后，所有已登录用户提交评论或回复时都需要验证码
+              label: 启用验证码
+              name: enable
+              id: captchaEnable
+              key: captchaEnable
               value: false
             - $formkit: select
+              if: "$get(captchaEnable).value === true"
+              label: 需要验证码的用户
+              name: audience
+              id: captchaAudience
+              key: captchaAudience
+              value: ANONYMOUS
+              validation: required
+              options:
+                - label: 所有用户
+                  value: ALL
+                - label: 匿名用户
+                  value: ANONYMOUS
+                - label: 按照角色选择用户
+                  value: ROLES
+            - $formkit: roleSelect
+              if: "$get(captchaEnable).value === true && $get(captchaAudience).value === ROLES"
+              label: 用户角色
+              name: roles
+              key: captchaRoles
+              multiple: true
+              value: []
+              validation: required
+              help: 拥有任一所选角色的用户提交评论或回复时需要验证码
+            - $formkit: select
               label: 验证码类型
-              if: "$get(anonymousCommentCaptcha).value === true || $get(authenticatedCommentCaptcha).value === true"
+              if: "$get(captchaEnable).value === true"
               name: type
               id: type
               value: "ALPHANUMERIC"
@@ -93,7 +110,7 @@ spec:
                 - label: 算术验证码
                   value: "ARITHMETIC"
             - $formkit: number
-              if: "$get(type).value === ALPHANUMERIC"
+              if: "$get(captchaEnable).value === true && $get(type).value === ALPHANUMERIC"
               name: captchaLength
               key: captchaLength
               label: 验证码长度
@@ -102,7 +119,7 @@ spec:
               value: 4
               validation: required
             - $formkit: radio
-              if: "$get(type).value === ALPHANUMERIC"
+              if: "$get(captchaEnable).value === true && $get(type).value === ALPHANUMERIC"
               name: ignoreCase
               key: ignoreCase
               label: 是否忽略验证码大小写验证
@@ -114,7 +131,7 @@ spec:
                 - label: 否
                   value: false
             - $formkit: number
-              if: "$get(type).value === ARITHMETIC"
+              if: "$get(captchaEnable).value === true && $get(type).value === ARITHMETIC"
               name: arithmeticRange
               key: arithmeticRange
               label: 计算范围

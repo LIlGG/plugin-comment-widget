@@ -27,13 +27,18 @@ class CommentCaptchaFilterTest {
 
     void configure(boolean anonymous, boolean authenticated, boolean loggedIn) {
         var captcha = new SettingConfigGetter.CaptchaConfig()
-            .setAnonymousCommentCaptcha(anonymous)
-            .setAuthenticatedCommentCaptcha(authenticated);
+            .setEnable(anonymous || authenticated)
+            .setAudience(anonymous && authenticated
+                ? SettingConfigGetter.CaptchaConfig.CaptchaAudience.ALL
+                : authenticated ? SettingConfigGetter.CaptchaConfig.CaptchaAudience.ROLES
+                    : SettingConfigGetter.CaptchaConfig.CaptchaAudience.ANONYMOUS)
+            .setRoles(java.util.Set.of("authenticated"));
         when(settings.getSecurityConfig()).thenReturn(Mono.just(
             new SettingConfigGetter.SecurityConfig().setCaptcha(captcha)));
         when(contexts.load(any())).thenReturn(loggedIn
             ? Mono.just(new SecurityContextImpl(
-                UsernamePasswordAuthenticationToken.authenticated("reader", "", java.util.List.of())))
+                UsernamePasswordAuthenticationToken.authenticated("reader", "", java.util.List.of(
+                    new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_authenticated")))))
             : Mono.empty());
         when(manager.generate(any(), any())).thenReturn(Mono.just(
             new CaptchaManager.Captcha("id", "code", "data:image/png;base64,test")));
@@ -92,6 +97,49 @@ class CommentCaptchaFilterTest {
             assertThat(exchange.getResponse().getBodyAsString().block())
                 .contains(CommentCaptchaFilter.CAPTCHA_INVALID_TYPE);
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"editor,true", "author,true", "reader,false"})
+    void matchesAnySelectedRoleForBothSubmissionRoutes(String role, boolean required) {
+        configure(false, true, true);
+        var config = new SettingConfigGetter.CaptchaConfig().setEnable(true)
+            .setAudience(SettingConfigGetter.CaptchaConfig.CaptchaAudience.ROLES)
+            .setRoles(java.util.Set.of("editor", "author"));
+        when(settings.getSecurityConfig()).thenReturn(Mono.just(
+            new SettingConfigGetter.SecurityConfig().setCaptcha(config)));
+        when(contexts.load(any())).thenReturn(Mono.just(new SecurityContextImpl(
+            UsernamePasswordAuthenticationToken.authenticated("reader", "", java.util.List.of(
+                new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + role))))));
+        for (var path : java.util.List.of("/apis/api.halo.run/v1alpha1/comments",
+            "/apis/api.halo.run/v1alpha1/comments/parent/reply")) {
+            var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(path));
+            var calls = new AtomicInteger();
+            filter.filter(exchange, e -> Mono.fromRunnable(calls::incrementAndGet)).block();
+            assertThat(calls.get()).isEqualTo(required ? 0 : 1);
+            config.setEnable(false);
+            filter.filter(exchange, e -> Mono.fromRunnable(calls::incrementAndGet)).block();
+            assertThat(calls.get()).isEqualTo(required ? 1 : 2);
+            config.setEnable(true);
+        }
+    }
+
+    @Test
+    void usesAuthenticatedRequestContextWithoutASession() {
+        configure(false, true, false);
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(
+            "/apis/api.halo.run/v1alpha1/comments"));
+        var authentication = UsernamePasswordAuthenticationToken.authenticated("reader", "",
+            java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority(
+                "ROLE_authenticated")));
+        var calls = new AtomicInteger();
+        filter.filter(exchange, e -> Mono.fromRunnable(calls::incrementAndGet))
+            .contextWrite(org.springframework.security.core.context.ReactiveSecurityContextHolder
+                .withAuthentication(authentication))
+            .block();
+        assertThat(calls.get()).isZero();
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        verifyNoInteractions(contexts);
     }
 
     @Test

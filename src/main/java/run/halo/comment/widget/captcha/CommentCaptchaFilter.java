@@ -16,7 +16,12 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.http.converter.json.ProblemDetailJacksonMixin;
 import org.springframework.lang.NonNull;
-import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.core.context.SecurityContext;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.security.web.server.context.ServerSecurityContextRepository;
 import org.springframework.security.web.server.util.matcher.OrServerWebExchangeMatcher;
 import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher;
@@ -26,12 +31,12 @@ import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 import run.halo.app.infra.AnonymousUserConst;
-import run.halo.app.security.AdditionalWebFilter;
+import run.halo.app.security.AfterSecurityWebFilter;
 import run.halo.comment.widget.SettingConfigGetter;
 
 @Component
 @RequiredArgsConstructor
-public class CommentCaptchaFilter implements AdditionalWebFilter {
+public class CommentCaptchaFilter implements AfterSecurityWebFilter {
     static final String CAPTCHA_INVALID_TYPE = "https://www.halo.run/probs/captcha-invalid";
     static final String CAPTCHA_REQUIRED_TYPE = "https://www.halo.run/probs/captcha-required";
     private final static String CAPTCHA_CODE_HEADER = "X-Captcha-Code";
@@ -53,10 +58,13 @@ public class CommentCaptchaFilter implements AdditionalWebFilter {
             .filter(ServerWebExchangeMatcher.MatchResult::isMatch)
             .flatMap(result -> settingConfigGetter.getSecurityConfig())
             .map(SettingConfigGetter.SecurityConfig::getCaptcha)
-            .filterWhen(captchaConfig -> isAnonymousCommenter(exchange)
-                .map(anonymous -> anonymous
-                    ? captchaConfig.isAnonymousCommentCaptcha()
-                    : captchaConfig.isAuthenticatedCommentCaptcha()))
+            .filter(SettingConfigGetter.CaptchaConfig::isEnable)
+            .filterWhen(captchaConfig -> ReactiveSecurityContextHolder.getContext()
+                .map(SecurityContext::getAuthentication)
+                .switchIfEmpty(Mono.defer(() -> contextRepository.load(exchange)
+                    .map(SecurityContext::getAuthentication)))
+                .map(authentication -> requiresCaptcha(captchaConfig, authentication))
+                .defaultIfEmpty(requiresCaptcha(captchaConfig, null)))
             .flatMap(captchaConfig -> validateCaptcha(exchange, chain, captchaConfig)
                 .thenReturn(true))
             .switchIfEmpty(Mono.defer(() -> chain.filter(exchange).thenReturn(false)))
@@ -142,15 +150,29 @@ public class CommentCaptchaFilter implements AdditionalWebFilter {
             .build();
     }
 
-    Mono<Boolean> isAnonymousCommenter(ServerWebExchange exchange) {
-        return contextRepository.load(exchange)
-            .map(context -> AnonymousUserConst.isAnonymousUser(context.getAuthentication().getName()))
-            .defaultIfEmpty(true);
-    }
-
-    @Override
-    public int getOrder() {
-        return SecurityWebFiltersOrder.AUTHORIZATION.getOrder();
+    static boolean requiresCaptcha(SettingConfigGetter.CaptchaConfig config,
+                                   Authentication authentication) {
+        if (!config.isEnable()) {
+            return false;
+        }
+        var anonymous = authentication == null || !authentication.isAuthenticated()
+            || AnonymousUserConst.isAnonymousUser(authentication.getName());
+        if (config.getAudience() == SettingConfigGetter.CaptchaConfig.CaptchaAudience.ALL) {
+            return true;
+        }
+        if (config.getAudience() == SettingConfigGetter.CaptchaConfig.CaptchaAudience.ROLES) {
+            if (config.getRoles() == null || config.getRoles().isEmpty()) {
+                return false;
+            }
+            var roles = anonymous ? Set.of("anonymous")
+                : authentication.getAuthorities().stream()
+                    .map(GrantedAuthority::getAuthority)
+                    .filter(authority -> authority.startsWith("ROLE_"))
+                    .map(authority -> authority.substring("ROLE_".length()))
+                    .collect(Collectors.toSet());
+            return roles.stream().anyMatch(config.getRoles()::contains);
+        }
+        return anonymous;
     }
 
     /**
