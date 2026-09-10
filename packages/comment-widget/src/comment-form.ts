@@ -157,7 +157,7 @@ export class CommentForm extends LitElement {
         ) {
           const { captcha, detail } =
             error.data as unknown as CaptchaRequiredResponse;
-          this.captcha = captcha;
+          this.captcha = captcha ?? '';
           this.toastManager?.warn(detail);
           return;
         }
