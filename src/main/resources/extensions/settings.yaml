@@ -96,7 +96,10 @@ spec:
               if: "$get(type).value === TURNSTILE"
               name: turnstileSecretRef
               label: Turnstile Secret Key
-              requiredKey: secretKey
+              descriptionPreset: 评论组件 Cloudflare Turnstile 验证密钥
+              requiredKeys:
+                - key: secretKey
+                  help: 填入 Cloudflare Turnstile 提供的 Secret Key。
               validation: required
               help: 创建或选择包含 secretKey 的密钥，填入 Cloudflare 提供的 Secret Key。
             - $formkit: number

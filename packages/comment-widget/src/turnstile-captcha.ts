@@ -1,6 +1,7 @@
 import { msg } from '@lit/localize';
 import { css, html, LitElement } from 'lit';
 import { property, state } from 'lit/decorators.js';
+import { when } from 'lit/directives/when.js';
 import baseStyles from './styles/base';
 
 interface TurnstileApi {
@@ -53,8 +54,10 @@ export class TurnstileCaptcha extends LitElement {
   @property() siteKey = '';
   @state() token = '';
   @state() failed = false;
+  @state() interactionRequired = false;
   private widgetId?: string;
   private generation = 0;
+  private finishWaiting?: (token: string) => void;
 
   override connectedCallback() {
     super.connectedCallback();
@@ -69,7 +72,7 @@ export class TurnstileCaptcha extends LitElement {
 
   private async mount() {
     const generation = ++this.generation;
-    this.remove();
+    this.removeWidget();
     this.failed = false;
     if (!this.siteKey || !this.isConnected) {
       this.failed = true;
@@ -89,38 +92,87 @@ export class TurnstileCaptcha extends LitElement {
         sitekey: this.siteKey,
         action: 'comment',
         size: 'flexible',
+        appearance: 'interaction-only',
         'response-field': false,
+        'before-interactive-callback': () => {
+          this.setInteractionRequired(true);
+        },
+        'after-interactive-callback': () => {
+          this.setInteractionRequired(false);
+        },
         callback: (token: string) => {
+          this.setInteractionRequired(false);
           this.token = token;
           this.failed = false;
+          this.finishWaiting?.(token);
         },
         'expired-callback': () => {
           this.token = '';
         },
         'error-callback': () => {
-          this.token = '';
-          this.failed = true;
+          this.failVerification();
         },
         'timeout-callback': () => {
-          this.token = '';
-          this.failed = true;
+          this.failVerification();
         },
       });
     } catch {
       if (this.isConnected && generation === this.generation) {
-        this.failed = true;
+        this.failVerification();
       }
     }
   }
 
+  private setInteractionRequired(required: boolean) {
+    this.interactionRequired = required;
+    this.dispatchEvent(
+      new CustomEvent<boolean>('interaction-required-change', {
+        detail: required,
+      })
+    );
+  }
+
+  private failVerification() {
+    this.setInteractionRequired(false);
+    this.token = '';
+    this.failed = true;
+    this.finishWaiting?.('');
+  }
+
+  waitForToken(): Promise<string> {
+    if (this.token) {
+      return Promise.resolve(this.token);
+    }
+    if (this.failed) {
+      return Promise.resolve('');
+    }
+    if (!this.isConnected) {
+      return Promise.resolve('');
+    }
+    this.finishWaiting?.('');
+    return new Promise((resolve) => {
+      const timeout = window.setTimeout(() => this.failVerification(), 60000);
+      this.finishWaiting = (token) => {
+        window.clearTimeout(timeout);
+        this.finishWaiting = undefined;
+        resolve(token);
+      };
+    });
+  }
+
   reset() {
+    this.setInteractionRequired(false);
+    this.finishWaiting?.('');
+    this.failed = false;
     this.token = '';
     if (this.widgetId !== undefined) {
       window.turnstile?.reset(this.widgetId);
     }
   }
 
-  private remove() {
+  private removeWidget() {
+    this.setInteractionRequired(false);
+    this.finishWaiting?.('');
     this.token = '';
     if (this.widgetId !== undefined) {
       window.turnstile?.remove(this.widgetId);
@@ -130,7 +182,7 @@ export class TurnstileCaptcha extends LitElement {
 
   override disconnectedCallback() {
     this.generation++;
-    this.remove();
+    this.removeWidget();
     super.disconnectedCallback();
   }
 
@@ -140,8 +192,20 @@ export class TurnstileCaptcha extends LitElement {
   ];
 
   override render() {
-    return html`<div class="challenge"></div>${this.failed ? html`<button class="mt-2 text-xs text-text-2 hover:text-text-1 underline" type="button" @click=${this.mount}>${msg('Verification unavailable. Click to retry.')}</button>` : ''}`;
+    return html`
+      <div class="challenge"></div>
+      ${when(
+        this.failed,
+        () => html`
+        <button class="mt-2 text-xs text-text-2 hover:text-text-1 underline"
+          type="button" @click=${this.mount}>
+          ${msg('Verification unavailable. Click to retry.')}
+        </button>
+      `
+      )}
+    `;
   }
 }
-customElements.get('turnstile-captcha') ||
+if (!customElements.get('turnstile-captcha')) {
   customElements.define('turnstile-captcha', TurnstileCaptcha);
+}

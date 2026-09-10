@@ -11,6 +11,7 @@
     export const templates = {
       'h6a83761bb66bbcc5': html`${0} Comentarios`,
 's053945ad43e9d1d6': `Por favor, ingrese el código de verificación`,
+'s067e961bb67cf3f6': `Verificando…`,
 's09c7e0ff5f4e18cb': `Cancelar respuesta`,
 's0b7ae9543c001867': `Responder`,
 's0fbf6dc6a1966408': `Siguiente`,

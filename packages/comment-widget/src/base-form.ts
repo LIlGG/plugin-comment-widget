@@ -64,6 +64,43 @@ export class BaseForm extends LitElement {
   @property({ type: Boolean })
   submitting = false;
 
+  @state()
+  private waitingForVerification = false;
+
+  @state()
+  private verificationInteractionRequired = false;
+
+  private get showLoading() {
+    if (this.submitting) {
+      return true;
+    }
+    if (this.verificationInteractionRequired) {
+      return false;
+    }
+    return this.waitingForVerification;
+  }
+
+  private get submitLabel() {
+    if (!this.waitingForVerification) {
+      return msg('Submit');
+    }
+    if (this.verificationInteractionRequired) {
+      return msg('Please complete the verification');
+    }
+    return msg('Verifying…');
+  }
+
+  private handleVerificationInteraction(event: CustomEvent<boolean>) {
+    this.verificationInteractionRequired = event.detail;
+  }
+
+  private get busy() {
+    if (this.waitingForVerification) {
+      return true;
+    }
+    return this.submitting;
+  }
+
   @consume({ context: toastContext, subscribe: true })
   @state()
   toastManager: ToastManager | undefined;
@@ -283,20 +320,20 @@ export class BaseForm extends LitElement {
               `
             )}
 
-            ${when(this.showCaptcha && this.useTurnstile, () => html`<turnstile-captcha .siteKey=${this.configMapData?.security.captcha.turnstileSiteKey || ''}></turnstile-captcha>`)}
+            ${when(this.showCaptcha && this.useTurnstile, () => html`<turnstile-captcha @interaction-required-change=${this.handleVerificationInteraction} .siteKey=${this.configMapData?.security.captcha.turnstileSiteKey || ''}></turnstile-captcha>`)}
 
             <button
-              .disabled=${this.submitting}
+              .disabled=${this.busy}
               type="submit"
               class="form-submit outline-none focus:shadow-input h-12 text-sm inline-flex border border-primary-1 border-solid items-center justify-center gap-2 bg-primary-1 text-white px-3 rounded-base hover:opacity-80 transition-all"
             >
               ${when(
-                this.submitting,
+                this.showLoading,
                 () => html`<icon-loading></icon-loading>`,
                 () =>
                   html`<i class="i-mingcute-send-line size-5" aria-hidden="true"></i>`
               )}
-              ${msg('Submit')}
+              ${this.submitLabel}
             </button>
           </div>
         </div>
@@ -304,11 +341,10 @@ export class BaseForm extends LitElement {
     `;
   }
 
-  private debouncedSubmit = debounce((data: Record<string, unknown>) => {
-    if (this.submitting) {
+  private debouncedSubmit = debounce(async () => {
+    if (this.busy) {
       return;
     }
-    const content = cleanHtml(this.editorRef.value?.editor?.getHTML());
     const characterCount =
       this.editorRef.value?.editor?.storage.characterCount.characters();
 
@@ -320,14 +356,42 @@ export class BaseForm extends LitElement {
 
     const turnstile =
       this.shadowRoot?.querySelector<TurnstileCaptcha>('turnstile-captcha');
-    if (this.showCaptcha && this.useTurnstile && !turnstile?.token) {
-      this.toastManager?.warn(msg('Please complete the verification'));
+    let turnstileToken = '';
+    if (this.showCaptcha && this.useTurnstile) {
+      this.verificationInteractionRequired =
+        turnstile?.interactionRequired ?? false;
+      this.waitingForVerification = true;
+      try {
+        turnstileToken = (await turnstile?.waitForToken()) ?? '';
+      } finally {
+        this.waitingForVerification = false;
+      }
+      if (!this.isConnected) {
+        return;
+      }
+      if (!turnstileToken) {
+        this.toastManager?.warn(
+          msg('Verification unavailable. Click to retry.')
+        );
+        return;
+      }
+    }
+    // Read the current draft after verification so edits made while waiting are retained.
+    const form = this.shadowRoot?.querySelector('form');
+    if (!form?.reportValidity()) {
       return;
     }
+    if (!this.editorRef.value?.editor?.storage.characterCount.characters()) {
+      this.toastManager?.warn(msg('Please enter content'));
+      this.editorRef.value?.setFocus();
+      return;
+    }
+    const content = cleanHtml(this.editorRef.value?.editor?.getHTML());
+    const data = Object.fromEntries(new FormData(form).entries());
     const event = new CustomEvent('submit', {
       detail: {
         ...data,
-        turnstileToken: turnstile?.token,
+        turnstileToken,
         content,
         hidden: data.hidden === 'on',
       },
@@ -351,7 +415,7 @@ export class BaseForm extends LitElement {
       })
     );
 
-    this.debouncedSubmit(data);
+    this.debouncedSubmit();
   }
 
   resetTurnstile() {

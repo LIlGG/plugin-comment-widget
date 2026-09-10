@@ -162,13 +162,17 @@
   <source>You are currently anonymous. After selecting the private option, the comment will only be visible to the site administrator.</source>
   <target>目前是匿名狀態，選擇私密選項後，評論將僅對網站管理員可見。</target>
 </trans-unit>
-<trans-unit id="s107ccef507b51f2c">
-  <source>Please complete the verification</source>
-  <target>請先完成人機驗證</target>
-</trans-unit>
 <trans-unit id="s34239948d1de01f1">
   <source>Verification unavailable. Click to retry.</source>
   <target>驗證暫不可用，點擊重試</target>
+</trans-unit>
+<trans-unit id="s067e961bb67cf3f6">
+  <source>Verifying…</source>
+  <target>正在驗證…</target>
+</trans-unit>
+<trans-unit id="s107ccef507b51f2c">
+  <source>Please complete the verification</source>
+  <target>請完成人機驗證</target>
 </trans-unit>
 </body>
 </file>
