@@ -20,7 +20,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
-import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.security.web.server.context.ServerSecurityContextRepository;
 import org.springframework.security.web.server.util.matcher.OrServerWebExchangeMatcher;
@@ -161,11 +160,13 @@ public class CommentCaptchaFilter implements AfterSecurityWebFilter {
             return true;
         }
         if (config.getAudience() == SettingConfigGetter.CaptchaConfig.CaptchaAudience.ROLES) {
+            if (anonymous) {
+                return config.isIncludeAnonymous();
+            }
             if (config.getRoles() == null || config.getRoles().isEmpty()) {
                 return false;
             }
-            var roles = anonymous ? Set.of("anonymous")
-                : authentication.getAuthorities().stream()
+            var roles = authentication.getAuthorities().stream()
                     .map(GrantedAuthority::getAuthority)
                     .filter(authority -> authority.startsWith("ROLE_"))
                     .map(authority -> authority.substring("ROLE_".length()))

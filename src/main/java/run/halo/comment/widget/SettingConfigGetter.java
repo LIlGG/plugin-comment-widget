@@ -54,6 +54,8 @@ public interface SettingConfigGetter {
 
         private Set<String> roles = Set.of();
 
+        private boolean includeAnonymous;
+
         public enum CaptchaAudience {
             ALL, ANONYMOUS, ROLES
         }

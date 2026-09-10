@@ -20,6 +20,7 @@ interface SecurityConfig {
     enable: boolean;
     audience: 'ALL' | 'ANONYMOUS' | 'ROLES';
     roles?: string[];
+    includeAnonymous?: boolean;
     type: 'ALPHANUMERIC' | 'ARITHMETIC';
     ignoreCase: boolean;
     captchaLength: number;

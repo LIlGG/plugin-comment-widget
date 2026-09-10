@@ -108,6 +108,9 @@ export class BaseForm extends LitElement {
       return true;
     }
     if (captcha.audience === 'ROLES') {
+      if (!this.currentUser) {
+        return captcha.includeAnonymous === true;
+      }
       return (captcha.roles ?? []).some((role) =>
         this.currentUserRoles.includes(role)
       );

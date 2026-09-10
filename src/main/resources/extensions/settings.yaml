@@ -98,6 +98,13 @@ spec:
               value: []
               validation: required
               help: 拥有任一所选角色的用户提交评论或回复时需要验证码
+            - $formkit: checkbox
+              if: "$get(captchaEnable).value === true && $get(captchaAudience).value === ROLES"
+              label: 同时包含匿名用户
+              name: includeAnonymous
+              key: captchaIncludeAnonymous
+              value: false
+              help: 勾选后，未登录用户提交评论或回复时也需要验证码
             - $formkit: select
               label: 验证码类型
               if: "$get(captchaEnable).value === true"

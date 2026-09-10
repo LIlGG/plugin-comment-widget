@@ -124,6 +124,30 @@ class CommentCaptchaFilterTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({"false,false,false", "true,false,true", "false,true,false", "true,true,false"})
+    void includesAnonymousIndependentlyOfLoggedInRoles(boolean includeAnonymous,
+                                                      boolean loggedIn, boolean required) {
+        configure(false, true, loggedIn);
+        var config = new SettingConfigGetter.CaptchaConfig().setEnable(true)
+            .setAudience(SettingConfigGetter.CaptchaConfig.CaptchaAudience.ROLES)
+            .setRoles(java.util.Set.of("editor"))
+            .setIncludeAnonymous(includeAnonymous);
+        when(settings.getSecurityConfig()).thenReturn(Mono.just(
+            new SettingConfigGetter.SecurityConfig().setCaptcha(config)));
+        for (var path : java.util.List.of("/apis/api.halo.run/v1alpha1/comments",
+            "/apis/api.halo.run/v1alpha1/comments/parent/reply")) {
+            var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(path));
+            var calls = new AtomicInteger();
+            filter.filter(exchange, e -> Mono.fromRunnable(calls::incrementAndGet)).block();
+            assertThat(calls.get()).isEqualTo(required ? 0 : 1);
+            config.setEnable(false);
+            filter.filter(exchange, e -> Mono.fromRunnable(calls::incrementAndGet)).block();
+            assertThat(calls.get()).isEqualTo(required ? 1 : 2);
+            config.setEnable(true);
+        }
+    }
+
     @Test
     void usesAuthenticatedRequestContextWithoutASession() {
         configure(false, true, false);
