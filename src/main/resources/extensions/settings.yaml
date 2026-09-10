@@ -80,6 +80,18 @@ spec:
               name: type
               id: type
               value: "ALPHANUMERIC"
+              help: Cloudflare Turnstile 官方文档
+              __raw__sectionsSchema:
+                help:
+                  if: "$value === TURNSTILE"
+                  children:
+                    - $el: a
+                      children: Cloudflare Turnstile 官方文档
+                      attrs:
+                        href: https://developers.cloudflare.com/turnstile/get-started/
+                        target: _blank
+                        rel: noopener noreferrer
+                        class: underline
               options:
                 - label: 字母数字组合
                   value: "ALPHANUMERIC"
@@ -92,17 +104,6 @@ spec:
               name: turnstileSiteKey
               label: Turnstile Site Key
               validation: required
-              help: Cloudflare Turnstile 官方文档
-              __raw__sectionsSchema:
-                help:
-                  children:
-                    - $el: a
-                      children: Cloudflare Turnstile 官方文档
-                      attrs:
-                        href: https://developers.cloudflare.com/turnstile/get-started/
-                        target: _blank
-                        rel: noopener noreferrer
-                        class: underline
             - $formkit: secret
               if: "$get(type).value === TURNSTILE"
               name: turnstileSecretRef
