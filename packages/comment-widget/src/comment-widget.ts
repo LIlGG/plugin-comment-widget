@@ -18,7 +18,6 @@ import {
   baseUrlContext,
   configMapDataContext,
   currentUserContext,
-  currentUserRolesContext,
   groupContext,
   kindContext,
   nameContext,
@@ -56,10 +55,6 @@ export class CommentWidget extends LitElement {
   @provide({ context: currentUserContext })
   @state()
   currentUser: User | undefined;
-
-  @provide({ context: currentUserRolesContext })
-  @state()
-  currentUserRoles: string[] = [];
 
   @provide({ context: allowAnonymousCommentsContext })
   @state()
@@ -105,7 +100,6 @@ export class CommentWidget extends LitElement {
     const data = await ofetch<DetailedUser>(
       `${this.baseUrl}/apis/api.console.halo.run/v1alpha1/users/-`
     );
-    this.currentUserRoles = data.roles.map((role) => role.metadata.name);
     this.currentUser =
       data.user.metadata.name === 'anonymousUser' ? undefined : data.user;
   }

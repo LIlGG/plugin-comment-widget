@@ -3,8 +3,12 @@ package run.halo.comment.widget;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.RouterFunctions;
@@ -16,6 +20,7 @@ import run.halo.app.extension.ConfigMap;
 import run.halo.app.extension.GroupVersion;
 import run.halo.app.extension.ReactiveExtensionClient;
 import run.halo.app.plugin.PluginContext;
+import run.halo.comment.widget.captcha.CaptchaRequirement;
 
 @Component
 @RequiredArgsConstructor
@@ -24,6 +29,10 @@ public class ConfigEndpoint implements CustomEndpoint {
     private final ReactiveExtensionClient client;
 
     private final PluginContext context;
+
+    private final SettingConfigGetter settingConfigGetter;
+
+    private final CaptchaRequirement captchaRequirement;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -34,24 +43,37 @@ public class ConfigEndpoint implements CustomEndpoint {
                 .build();
     }
 
-
     private Mono<ServerResponse> getConfig(ServerRequest request) {
         return client.fetch(ConfigMap.class, context.getConfigMapName())
-                .flatMap(configMap -> {
-                    Map<String, String> data = configMap.getData();
-                    ObjectNode rootNode = objectMapper.createObjectNode();
+            .map(this::toConfigData)
+            .flatMap(rootNode -> settingConfigGetter.getSecurityConfig()
+                .flatMap(config -> captchaRequirement.isRequired(config.getCaptcha()))
+                .flatMap(required -> {
+                    rootNode.put("captchaRequired", required);
+                    return ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .cacheControl(CacheControl.noStore().cachePrivate())
+                        .headers(headers -> headers.setVary(
+                            List.of(HttpHeaders.COOKIE, HttpHeaders.AUTHORIZATION)))
+                        .bodyValue(rootNode.toString());
+                }));
+    }
 
-                    data.forEach((key, value) -> {
-                        try {
-                            JsonNode jsonNode = objectMapper.readTree(value);
-                            rootNode.set(key, jsonNode);
-                        } catch (Exception e) {
-                            rootNode.put(key, value);
-                        }
-                    });
-
-                    return ServerResponse.ok().bodyValue(rootNode);
-                });
+    private ObjectNode toConfigData(ConfigMap configMap) {
+        ObjectNode rootNode = objectMapper.createObjectNode();
+        Map<String, String> data = configMap.getData();
+        if (data == null) {
+            return rootNode;
+        }
+        data.forEach((key, value) -> {
+            try {
+                JsonNode jsonNode = objectMapper.readTree(value);
+                rootNode.set(key, jsonNode);
+            } catch (Exception e) {
+                rootNode.put(key, value);
+            }
+        });
+        return rootNode;
     }
 
     @Override

@@ -24,7 +24,3 @@ export const toastContext = createContext<ToastManager | undefined>(
 export const configMapDataContext = createContext<ConfigMapData | undefined>(
   Symbol('configMapData')
 );
-
-export const currentUserRolesContext = createContext<string[]>(
-  Symbol('currentUserRoles')
-);

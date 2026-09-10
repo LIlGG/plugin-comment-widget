@@ -1,4 +1,5 @@
 export interface ConfigMapData {
+  captchaRequired: boolean;
   basic: BasicConfig;
   security: SecurityConfig;
   avatar: AvatarConfig;

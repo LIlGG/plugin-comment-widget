@@ -16,12 +16,6 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.http.converter.json.ProblemDetailJacksonMixin;
 import org.springframework.lang.NonNull;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.context.ReactiveSecurityContextHolder;
-import org.springframework.security.core.context.SecurityContext;
-import java.util.stream.Collectors;
-import org.springframework.security.web.server.context.ServerSecurityContextRepository;
 import org.springframework.security.web.server.util.matcher.OrServerWebExchangeMatcher;
 import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher;
 import org.springframework.stereotype.Component;
@@ -29,7 +23,6 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
-import run.halo.app.infra.AnonymousUserConst;
 import run.halo.app.security.AfterSecurityWebFilter;
 import run.halo.comment.widget.SettingConfigGetter;
 
@@ -48,7 +41,7 @@ public class CommentCaptchaFilter implements AfterSecurityWebFilter {
     private final SettingConfigGetter settingConfigGetter;
     private final CaptchaManager captchaManager;
     private final CaptchaCookieResolverImpl captchaCookieResolver;
-    private final ServerSecurityContextRepository contextRepository;
+    private final CaptchaRequirement captchaRequirement;
 
     @Override
     @NonNull
@@ -57,13 +50,7 @@ public class CommentCaptchaFilter implements AfterSecurityWebFilter {
             .filter(ServerWebExchangeMatcher.MatchResult::isMatch)
             .flatMap(result -> settingConfigGetter.getSecurityConfig())
             .map(SettingConfigGetter.SecurityConfig::getCaptcha)
-            .filter(SettingConfigGetter.CaptchaConfig::isEnable)
-            .filterWhen(captchaConfig -> ReactiveSecurityContextHolder.getContext()
-                .map(SecurityContext::getAuthentication)
-                .switchIfEmpty(Mono.defer(() -> contextRepository.load(exchange)
-                    .map(SecurityContext::getAuthentication)))
-                .map(authentication -> requiresCaptcha(captchaConfig, authentication))
-                .defaultIfEmpty(requiresCaptcha(captchaConfig, null)))
+            .filterWhen(captchaRequirement::isRequired)
             .flatMap(captchaConfig -> validateCaptcha(exchange, chain, captchaConfig)
                 .thenReturn(true))
             .switchIfEmpty(Mono.defer(() -> chain.filter(exchange).thenReturn(false)))
@@ -147,33 +134,6 @@ public class CommentCaptchaFilter implements AfterSecurityWebFilter {
         return Jackson2ObjectMapperBuilder.json()
             .mixIn(ProblemDetail.class, ProblemDetailJacksonMixin.class)
             .build();
-    }
-
-    static boolean requiresCaptcha(SettingConfigGetter.CaptchaConfig config,
-                                   Authentication authentication) {
-        if (!config.isEnable()) {
-            return false;
-        }
-        var anonymous = authentication == null || !authentication.isAuthenticated()
-            || AnonymousUserConst.isAnonymousUser(authentication.getName());
-        if (config.getAudience() == SettingConfigGetter.CaptchaConfig.CaptchaAudience.ALL) {
-            return true;
-        }
-        if (config.getAudience() == SettingConfigGetter.CaptchaConfig.CaptchaAudience.ROLES) {
-            if (anonymous) {
-                return config.isIncludeAnonymous();
-            }
-            if (config.getRoles() == null || config.getRoles().isEmpty()) {
-                return false;
-            }
-            var roles = authentication.getAuthorities().stream()
-                    .map(GrantedAuthority::getAuthority)
-                    .filter(authority -> authority.startsWith("ROLE_"))
-                    .map(authority -> authority.substring("ROLE_".length()))
-                    .collect(Collectors.toSet());
-            return roles.stream().anyMatch(config.getRoles()::contains);
-        }
-        return anonymous;
     }
 
     /**
