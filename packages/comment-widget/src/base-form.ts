@@ -25,6 +25,8 @@ import { ofetch } from 'ofetch';
 import type { CommentEditor } from './comment-editor';
 import { cleanHtml } from './utils/html';
 import './base-tooltip';
+import './turnstile-captcha';
+import type { TurnstileCaptcha } from './turnstile-captcha';
 
 export class BaseForm extends LitElement {
   @consume({ context: baseUrlContext })
@@ -91,6 +93,10 @@ export class BaseForm extends LitElement {
     )}`;
   }
 
+  get useTurnstile() {
+    return this.configMapData?.security.captcha.type === 'TURNSTILE';
+  }
+
   get showCaptcha() {
     return (
       this.configMapData?.security.captcha.anonymousCommentCaptcha &&
@@ -112,7 +118,7 @@ export class BaseForm extends LitElement {
   }
 
   async handleFetchCaptcha() {
-    if (!this.showCaptcha) {
+    if (!this.showCaptcha || this.useTurnstile) {
       return;
     }
 
@@ -258,7 +264,7 @@ export class BaseForm extends LitElement {
             )}
 
             ${when(
-              this.showCaptcha && this.captcha,
+              this.showCaptcha && !this.useTurnstile && this.captcha,
               () => html`
                   <div class="form-captcha gap-2 flex items-center">
                     <img
@@ -276,6 +282,8 @@ export class BaseForm extends LitElement {
                   </div>
               `
             )}
+
+            ${when(this.showCaptcha && this.useTurnstile, () => html`<turnstile-captcha .siteKey=${this.configMapData?.security.captcha.turnstileSiteKey || ''}></turnstile-captcha>`)}
 
             <button
               .disabled=${this.submitting}
@@ -297,6 +305,9 @@ export class BaseForm extends LitElement {
   }
 
   private debouncedSubmit = debounce((data: Record<string, unknown>) => {
+    if (this.submitting) {
+      return;
+    }
     const content = cleanHtml(this.editorRef.value?.editor?.getHTML());
     const characterCount =
       this.editorRef.value?.editor?.storage.characterCount.characters();
@@ -307,9 +318,16 @@ export class BaseForm extends LitElement {
       return;
     }
 
+    const turnstile =
+      this.shadowRoot?.querySelector<TurnstileCaptcha>('turnstile-captcha');
+    if (this.showCaptcha && this.useTurnstile && !turnstile?.token) {
+      this.toastManager?.warn(msg('Please complete the verification'));
+      return;
+    }
     const event = new CustomEvent('submit', {
       detail: {
         ...data,
+        turnstileToken: turnstile?.token,
         content,
         hidden: data.hidden === 'on',
       },
@@ -334,6 +352,12 @@ export class BaseForm extends LitElement {
     );
 
     this.debouncedSubmit(data);
+  }
+
+  resetTurnstile() {
+    this.shadowRoot
+      ?.querySelector<TurnstileCaptcha>('turnstile-captcha')
+      ?.reset();
   }
 
   resetForm() {

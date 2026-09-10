@@ -58,6 +58,10 @@ public interface SettingConfigGetter {
 
         private int arithmeticRange = 90;
 
+        private String turnstileSiteKey;
+
+        private String turnstileSecretRef;
+
         public CaptchaConfig setType(CaptchaType type) {
             this.type = (type == null ? CaptchaType.ALPHANUMERIC : type);
             return this;

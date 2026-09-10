@@ -18,7 +18,8 @@ interface BasicConfig {
 interface SecurityConfig {
   captcha: {
     anonymousCommentCaptcha: boolean;
-    type: 'ALPHANUMERIC' | 'ARITHMETIC';
+    type: 'ALPHANUMERIC' | 'ARITHMETIC' | 'TURNSTILE';
+    turnstileSiteKey?: string;
     ignoreCase: boolean;
     captchaLength: number;
   };

@@ -43,6 +43,7 @@ public class CommentCaptchaFilter implements AdditionalWebFilter {
 
     private final SettingConfigGetter settingConfigGetter;
     private final CaptchaManager captchaManager;
+    private final TurnstileVerifier turnstileVerifier;
     private final CaptchaCookieResolverImpl captchaCookieResolver;
     private final ServerSecurityContextRepository contextRepository;
 
@@ -59,8 +60,29 @@ public class CommentCaptchaFilter implements AdditionalWebFilter {
                 if (!captchaConfig.isAnonymousCommentCaptcha()) {
                     return chain.filter(exchange);
                 }
+                if (captchaConfig.getType() == CaptchaType.TURNSTILE) {
+                    return turnstileVerifier.verify(
+                            exchange.getRequest().getHeaders().getFirst("X-Turnstile-Token"), captchaConfig)
+                        .flatMap(valid -> {
+                            if (valid) {
+                                return chain.filter(exchange);
+                            }
+                            return sendTurnstileRequiredResponse(exchange);
+                        });
+                }
                 return validateCaptcha(exchange, chain, captchaConfig);
             });
+    }
+
+    private Mono<Void> sendTurnstileRequiredResponse(ServerWebExchange exchange) {
+        exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+        addHeaderIfAbsent(exchange.getResponse().getHeaders(), CAPTCHA_REQUIRED_HEADER, "true");
+        addHeaderIfAbsent(exchange.getResponse().getHeaders(), HttpHeaders.CONTENT_TYPE, CONTENT_TYPE);
+        var problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "人机验证未通过，请重新验证后提交");
+        problem.setType(URI.create(CAPTCHA_INVALID_TYPE));
+        problem.setTitle("Turnstile Verification");
+        var bytes = getResponseData(problem);
+        return exchange.getResponse().writeWith(Mono.just(exchange.getResponse().bufferFactory().wrap(bytes)));
     }
 
     private Mono<Void> sendCaptchaRequiredResponse(ServerWebExchange exchange,

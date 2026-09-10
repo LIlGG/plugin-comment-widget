@@ -85,6 +85,20 @@ spec:
                   value: "ALPHANUMERIC"
                 - label: 算术验证码
                   value: "ARITHMETIC"
+                - label: Cloudflare Turnstile
+                  value: "TURNSTILE"
+            - $formkit: text
+              if: "$get(type).value === TURNSTILE"
+              name: turnstileSiteKey
+              label: Turnstile Site Key
+              validation: required
+            - $formkit: secret
+              if: "$get(type).value === TURNSTILE"
+              name: turnstileSecretRef
+              label: Turnstile Secret Key
+              requiredKey: secretKey
+              validation: required
+              help: 创建或选择包含 secretKey 的密钥，填入 Cloudflare 提供的 Secret Key。
             - $formkit: number
               if: "$get(type).value === ALPHANUMERIC"
               name: captchaLength

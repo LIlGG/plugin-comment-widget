@@ -162,6 +162,14 @@
   <source>You are currently anonymous. After selecting the private option, the comment will only be visible to the site administrator.</source>
   <target>当前是匿名状态，选择私密选项后，评论将仅对网站管理员可见。</target>
 </trans-unit>
+<trans-unit id="s107ccef507b51f2c">
+  <source>Please complete the verification</source>
+  <target>请先完成人机验证</target>
+</trans-unit>
+<trans-unit id="s34239948d1de01f1">
+  <source>Verification unavailable. Click to retry.</source>
+  <target>验证暂不可用，点击重试</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

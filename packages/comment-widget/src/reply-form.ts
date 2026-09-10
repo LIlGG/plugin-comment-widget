@@ -130,6 +130,9 @@ export class ReplyForm extends LitElement {
           method: 'POST',
           headers: {
             ...getCaptchaCodeHeader(data.captchaCode),
+            ...(data.turnstileToken
+              ? { 'X-Turnstile-Token': data.turnstileToken }
+              : {}),
           },
           body: replyRequest,
         }
@@ -173,6 +176,7 @@ export class ReplyForm extends LitElement {
 
       this.toastManager?.error(msg('Comment failed, please try again later'));
     } finally {
+      this.baseFormRef.value?.resetTurnstile();
       this.submitting = false;
     }
   }
