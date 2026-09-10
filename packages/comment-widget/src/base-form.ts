@@ -205,8 +205,13 @@ export class BaseForm extends LitElement {
   override render() {
     return html`
       <form class="form w-full flex flex-col gap-4" @submit="${this.onSubmit}">
-        <comment-editor .disabled=${this.submitting || this.uploading}
-          .enableUpload=${this.canUploadImages} ${ref(this.editorRef)} .placeholder=${this.configMapData?.editor?.placeholder}></comment-editor>
+        <comment-editor
+          .disabled=${this.submitting || this.uploading}
+          .enableUpload=${this.canUploadImages}
+          .enableEmoji=${this.configMapData?.editor?.enableEmoji !== false}
+          ${ref(this.editorRef)}
+          .placeholder=${this.configMapData?.editor?.placeholder}
+        ></comment-editor>
 
         ${when(
           !this.currentUser && this.allowAnonymousComments,

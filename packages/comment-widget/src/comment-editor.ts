@@ -98,6 +98,9 @@ export class CommentEditor extends LitElement {
   keepAlive = false;
 
   @property({ type: Boolean })
+  enableEmoji = true;
+
+  @property({ type: Boolean })
   enableUpload = false;
 
   @property({ type: Boolean })
@@ -251,11 +254,18 @@ export class CommentEditor extends LitElement {
           ${repeat(actionItems, (item) =>
             this.renderActionItem(item, this.editor)
           )}
-          ${this.renderActionItem({ type: 'separator' })}
+          ${when(this.enableUpload || this.enableEmoji, () =>
+            this.renderActionItem({ type: 'separator' })
+          )}
           ${when(this.enableUpload, () => this.renderActionItem(uploadActionItem, this.editor))}
-          <li class="flex items-center">
-            <emoji-button @emoji-select=${this.onEmojiSelect}></emoji-button>
-          </li>
+          ${when(
+            this.enableEmoji,
+            () => html`
+            <li class="flex items-center">
+              <emoji-button @emoji-select=${this.onEmojiSelect}></emoji-button>
+            </li>
+          `
+          )}
         </ul>
       </div>`;
   }
