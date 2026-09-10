@@ -7,9 +7,11 @@
     "type-check": "vue-tsc --build"
   },
   "dependencies": {
+    "@halo-dev/api-client": "2.26.0",
     "@halo-dev/comment-widget": "workspace:*",
     "@halo-dev/components": "^2.26.0",
     "@halo-dev/ui-shared": "^2.26.0",
+    "@tanstack/vue-query": "^4.43.0",
     "pinia": "^3.0.4",
     "vue": "^3.5.24"
   },

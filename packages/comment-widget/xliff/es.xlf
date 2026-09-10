@@ -162,6 +162,10 @@
   <source>You are currently anonymous. After selecting the private option, the comment will only be visible to the site administrator.</source>
   <target>Actualmente anónimo. Después de seleccionar la opción privada, el comentario solo será visible para el administrador del sitio.</target>
 </trans-unit>
+<trans-unit id="s44851a8adf059eef">
+  <source>Pinned</source>
+  <target>Fijado</target>
+</trans-unit>
 </body>
 </file>
 </xliff>
