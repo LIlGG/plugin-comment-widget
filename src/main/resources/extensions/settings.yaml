@@ -152,6 +152,11 @@ spec:
     - group: editor
       label: 编辑器
       formSchema:
+        - $formkit: checkbox
+          name: enableEmoji
+          label: 启用表情选择器
+          help: 控制评论和回复输入框中的表情按钮，不影响已有评论中的表情
+          value: true
         - $formkit: text
           name: placeholder
           label: 自定义评论框占位符
