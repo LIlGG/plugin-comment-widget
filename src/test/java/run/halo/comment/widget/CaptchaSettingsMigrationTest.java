@@ -9,13 +9,25 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class CaptchaSettingsMigrationTest {
     @ParameterizedTest
-    @CsvSource({"false,false,false,ANONYMOUS", "true,false,true,ANONYMOUS",
-        "false,true,true,ROLES", "true,true,true,ALL"})
+    @CsvSource({
+        "false,false,false,ANONYMOUS,",
+        "true,false,true,ANONYMOUS,",
+        "false,true,true,ROLES,authenticated",
+        "true,true,true,ALL,"
+    })
     void migratesLegacyFlags(boolean anonymous, boolean authenticated, boolean enabled,
-                            String audience) throws Exception {
-        var original = "{\"captcha\":{\"enable\":false,\"anonymousCommentCaptcha\":" + anonymous
-            + ",\"authenticatedCommentCaptcha\":" + authenticated
-            + ",\"type\":\"ARITHMETIC\",\"arithmeticRange\":50}}";
+                            String audience, String expectedRole) throws Exception {
+        var original = """
+            {
+              "captcha": {
+                "enable": false,
+                "anonymousCommentCaptcha": %s,
+                "authenticatedCommentCaptcha": %s,
+                "type": "ARITHMETIC",
+                "arithmeticRange": 50
+              }
+            }
+            """.formatted(anonymous, authenticated);
         var migrated = CommentWidgetPlugin.migrateCaptchaSettings(original);
         var captcha = new ObjectMapper().readTree(migrated).path("captcha");
         assertThat(captcha.path("enable").asBoolean()).isEqualTo(enabled);
@@ -23,7 +35,13 @@ class CaptchaSettingsMigrationTest {
         assertThat(captcha.path("type").asText()).isEqualTo("ARITHMETIC");
         assertThat(captcha.path("arithmeticRange").asInt()).isEqualTo(50);
         assertThat(captcha.has("anonymousCommentCaptcha")).isFalse();
-        assertThat(captcha.path("roles").size()).isEqualTo(authenticated && !anonymous ? 1 : 0);
+        var roles = captcha.path("roles");
+        if (expectedRole == null) {
+            assertThat(roles.isEmpty()).isTrue();
+        } else {
+            assertThat(roles.size()).isEqualTo(1);
+            assertThat(roles.get(0).asText()).isEqualTo(expectedRole);
+        }
         assertThat(CommentWidgetPlugin.migrateCaptchaSettings(migrated)).isEqualTo(migrated);
     }
 

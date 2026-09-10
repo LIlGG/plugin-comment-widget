@@ -58,13 +58,20 @@ class CommentCaptchaFilterTest {
 
     @ParameterizedTest
     @CsvSource({
-        "false,ALL,false,anonymous,false", "false,ALL,false,reader,false",
-        "false,ROLES,true,anonymous,false", "false,ROLES,true,editor,false",
-        "true,ALL,false,anonymous,true", "true,ALL,false,reader,true",
-        "true,ANONYMOUS,false,anonymous,true", "true,ANONYMOUS,true,reader,false",
-        "true,ROLES,false,anonymous,false", "true,ROLES,true,anonymous,true",
-        "true,ROLES,false,editor,true", "true,ROLES,false,author,true",
-        "true,ROLES,false,reader,false", "true,ROLES,true,reader,false",
+        "false,ALL,false,anonymous,false",
+        "false,ALL,false,reader,false",
+        "false,ROLES,true,anonymous,false",
+        "false,ROLES,true,editor,false",
+        "true,ALL,false,anonymous,true",
+        "true,ALL,false,reader,true",
+        "true,ANONYMOUS,false,anonymous,true",
+        "true,ANONYMOUS,true,reader,false",
+        "true,ROLES,false,anonymous,false",
+        "true,ROLES,true,anonymous,true",
+        "true,ROLES,false,editor,true",
+        "true,ROLES,false,author,true",
+        "true,ROLES,false,reader,false",
+        "true,ROLES,true,reader,false",
         "true,ROLES,false,authenticated,true"
     })
     void enforcesAudienceForCommentsAndReplies(boolean enabled, CaptchaAudience audience,
@@ -81,14 +88,16 @@ class CommentCaptchaFilterTest {
             var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(path));
             var calls = new AtomicInteger();
             submit(exchange, authentication, e -> Mono.fromRunnable(calls::incrementAndGet));
-            assertThat(calls.get()).isEqualTo(required ? 0 : 1);
-            if (required) {
-                assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
-                assertThat(exchange.getResponse().getHeaders().getFirst("X-Require-Captcha"))
-                    .isEqualTo("true");
-                assertThat(exchange.getResponse().getBodyAsString().block())
-                    .contains(CommentCaptchaFilter.CAPTCHA_REQUIRED_TYPE);
+            if (!required) {
+                assertThat(calls.get()).isEqualTo(1);
+                continue;
             }
+            assertThat(calls.get()).isZero();
+            assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(exchange.getResponse().getHeaders().getFirst("X-Require-Captcha"))
+                .isEqualTo("true");
+            assertThat(exchange.getResponse().getBodyAsString().block())
+                .contains(CommentCaptchaFilter.CAPTCHA_REQUIRED_TYPE);
         }
     }
 
@@ -103,15 +112,16 @@ class CommentCaptchaFilterTest {
                 .cookie(new HttpCookie(CaptchaCookieResolverImpl.CAPTCHA_COOKIE_KEY, "id")));
             var calls = new AtomicInteger();
             submit(exchange, authenticated("reader"), e -> Mono.fromRunnable(calls::incrementAndGet));
-            assertThat(calls.get()).isEqualTo(valid ? 1 : 0);
             if (valid) {
+                assertThat(calls.get()).isEqualTo(1);
                 assertThat(exchange.getResponse().getCookies()
                     .getFirst(CaptchaCookieResolverImpl.CAPTCHA_COOKIE_KEY).getMaxAge()).isZero();
-            } else {
-                assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
-                assertThat(exchange.getResponse().getBodyAsString().block())
-                    .contains(CommentCaptchaFilter.CAPTCHA_INVALID_TYPE);
+                continue;
             }
+            assertThat(calls.get()).isZero();
+            assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(exchange.getResponse().getBodyAsString().block())
+                .contains(CommentCaptchaFilter.CAPTCHA_INVALID_TYPE);
         }
         verify(manager, times(2)).verify("id", "answer", true);
     }

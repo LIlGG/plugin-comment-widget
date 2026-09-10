@@ -44,19 +44,24 @@ public class ConfigEndpoint implements CustomEndpoint {
     }
 
     private Mono<ServerResponse> getConfig(ServerRequest request) {
+        var required = settingConfigGetter.getSecurityConfig()
+            .flatMap(config -> captchaRequirement.isRequired(config.getCaptcha()));
         return client.fetch(ConfigMap.class, context.getConfigMapName())
             .map(this::toConfigData)
-            .flatMap(rootNode -> settingConfigGetter.getSecurityConfig()
-                .flatMap(config -> captchaRequirement.isRequired(config.getCaptcha()))
-                .flatMap(required -> {
-                    rootNode.put("captchaRequired", required);
-                    return ServerResponse.ok()
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .cacheControl(CacheControl.noStore().cachePrivate())
-                        .headers(headers -> headers.setVary(
-                            List.of(HttpHeaders.COOKIE, HttpHeaders.AUTHORIZATION)))
-                        .bodyValue(rootNode.toString());
-                }));
+            .zipWith(required, (rootNode, captchaRequired) -> {
+                rootNode.put("captchaRequired", captchaRequired);
+                return rootNode;
+            })
+            .flatMap(this::createConfigResponse);
+    }
+
+    private Mono<ServerResponse> createConfigResponse(ObjectNode rootNode) {
+        return ServerResponse.ok()
+            .contentType(MediaType.APPLICATION_JSON)
+            .cacheControl(CacheControl.noStore().cachePrivate())
+            .headers(headers -> headers.setVary(
+                List.of(HttpHeaders.COOKIE, HttpHeaders.AUTHORIZATION)))
+            .bodyValue(rootNode.toString());
     }
 
     private ObjectNode toConfigData(ConfigMap configMap) {

@@ -22,7 +22,14 @@ class ConfigEndpointTest {
     @Test
     void exposesMigratedHiddenRoleRequirementWithoutCachingAcrossUsers() throws Exception {
         var migrated = CommentWidgetPlugin.migrateCaptchaSettings(
-            "{\"captcha\":{\"anonymousCommentCaptcha\":false,\"authenticatedCommentCaptcha\":true}}");
+            """
+            {
+              "captcha": {
+                "anonymousCommentCaptcha": false,
+                "authenticatedCommentCaptcha": true
+              }
+            }
+            """);
         var config = new ObjectMapper().readValue(migrated, SettingConfigGetter.SecurityConfig.class);
         assertThat(config.getCaptcha().getRoles()).containsExactly("authenticated");
         var client = mock(ReactiveExtensionClient.class);

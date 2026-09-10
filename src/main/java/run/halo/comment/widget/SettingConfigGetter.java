@@ -34,7 +34,11 @@ public interface SettingConfigGetter {
         private CaptchaConfig captcha = CaptchaConfig.empty();
 
         public SecurityConfig setCaptcha(CaptchaConfig captcha) {
-            this.captcha = (captcha == null ? CaptchaConfig.empty() : captcha);
+            if (captcha == null) {
+                this.captcha = CaptchaConfig.empty();
+                return this;
+            }
+            this.captcha = captcha;
             return this;
         }
 
@@ -70,7 +74,11 @@ public interface SettingConfigGetter {
         private int arithmeticRange = 90;
 
         public CaptchaConfig setType(CaptchaType type) {
-            this.type = (type == null ? CaptchaType.ALPHANUMERIC : type);
+            if (type == null) {
+                this.type = CaptchaType.ALPHANUMERIC;
+                return this;
+            }
+            this.type = type;
             return this;
         }
 

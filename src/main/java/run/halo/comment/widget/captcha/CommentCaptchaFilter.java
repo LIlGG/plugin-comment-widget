@@ -47,14 +47,24 @@ public class CommentCaptchaFilter implements AfterSecurityWebFilter {
     @NonNull
     public Mono<Void> filter(@NonNull ServerWebExchange exchange, @NonNull WebFilterChain chain) {
         return pathMatcher.matches(exchange)
-            .filter(ServerWebExchangeMatcher.MatchResult::isMatch)
-            .flatMap(result -> settingConfigGetter.getSecurityConfig())
+            .flatMap(match -> {
+                if (!match.isMatch()) {
+                    return chain.filter(exchange);
+                }
+                return filterCommentSubmission(exchange, chain);
+            });
+    }
+
+    private Mono<Void> filterCommentSubmission(ServerWebExchange exchange, WebFilterChain chain) {
+        return settingConfigGetter.getSecurityConfig()
             .map(SettingConfigGetter.SecurityConfig::getCaptcha)
-            .filterWhen(captchaRequirement::isRequired)
-            .flatMap(captchaConfig -> validateCaptcha(exchange, chain, captchaConfig)
-                .thenReturn(true))
-            .switchIfEmpty(Mono.defer(() -> chain.filter(exchange).thenReturn(false)))
-            .then();
+            .flatMap(config -> captchaRequirement.isRequired(config)
+                .flatMap(required -> {
+                    if (!required) {
+                        return chain.filter(exchange);
+                    }
+                    return validateCaptcha(exchange, chain, config);
+                }));
     }
 
     private Mono<Void> sendCaptchaRequiredResponse(ServerWebExchange exchange,
@@ -85,7 +95,10 @@ public class CommentCaptchaFilter implements AfterSecurityWebFilter {
                                        SettingConfigGetter.CaptchaConfig captchaConfig) {
         var captchaCodeOpt = getCaptchaCode(exchange);
         var cookie = captchaCookieResolver.resolveCookie(exchange);
-        if (captchaCodeOpt.isEmpty() || cookie == null) {
+        if (captchaCodeOpt.isEmpty()) {
+            return sendCaptchaRequiredResponse(exchange, captchaConfig, new CaptchaCodeMissingException());
+        }
+        if (cookie == null) {
             return sendCaptchaRequiredResponse(exchange, captchaConfig, new CaptchaCodeMissingException());
         }
         return captchaManager.verify(cookie.getValue(), captchaCodeOpt.get(), captchaConfig.isIgnoreCase())
