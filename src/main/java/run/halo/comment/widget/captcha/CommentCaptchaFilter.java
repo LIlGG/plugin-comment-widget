@@ -78,18 +78,21 @@ public class CommentCaptchaFilter implements AdditionalWebFilter {
                                                        TurnstileVerifier.Result result) {
         var status = HttpStatus.FORBIDDEN;
         var detail = "人机验证未通过，请重新验证后提交";
+        var problemType = CAPTCHA_INVALID_TYPE;
         if (result == TurnstileVerifier.Result.CONFIGURATION_ERROR) {
             status = HttpStatus.SERVICE_UNAVAILABLE;
             detail = "人机验证配置异常，请联系站点管理员";
+            problemType = "https://www.halo.run/probs/captcha-configuration-error";
         } else if (result == TurnstileVerifier.Result.UNAVAILABLE) {
             status = HttpStatus.SERVICE_UNAVAILABLE;
             detail = "人机验证服务暂不可用，请稍后重试";
+            problemType = "https://www.halo.run/probs/captcha-unavailable";
         }
         exchange.getResponse().setStatusCode(status);
         addHeaderIfAbsent(exchange.getResponse().getHeaders(), CAPTCHA_REQUIRED_HEADER, "true");
         addHeaderIfAbsent(exchange.getResponse().getHeaders(), HttpHeaders.CONTENT_TYPE, CONTENT_TYPE);
         var problem = ProblemDetail.forStatusAndDetail(status, detail);
-        problem.setType(URI.create(CAPTCHA_INVALID_TYPE));
+        problem.setType(URI.create(problemType));
         problem.setTitle("Turnstile Verification");
         var bytes = getResponseData(problem);
         return exchange.getResponse().writeWith(Mono.just(exchange.getResponse().bufferFactory().wrap(bytes)));

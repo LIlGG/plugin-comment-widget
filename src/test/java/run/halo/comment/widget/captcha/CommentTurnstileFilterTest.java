@@ -17,7 +17,7 @@ import run.halo.comment.widget.SettingConfigGetter;
 class CommentTurnstileFilterTest {
     @ParameterizedTest
     @EnumSource(TurnstileVerifier.Result.class)
-    void handlesVerificationResultsForCommentsAndReplies(TurnstileVerifier.Result result) {
+    void handlesVerificationResultsForCommentsAndReplies(TurnstileVerifier.Result result) throws Exception {
         for (var path : new String[]{"/apis/api.halo.run/v1alpha1/comments",
             "/apis/api.halo.run/v1alpha1/comments/example/reply"}) {
             var settings = mock(SettingConfigGetter.class);
@@ -42,14 +42,20 @@ class CommentTurnstileFilterTest {
             assertThat(handlerCalled).isFalse();
             var expectedStatus = HttpStatus.SERVICE_UNAVAILABLE;
             var expectedDetail = "人机验证服务暂不可用";
+            var expectedType = "https://www.halo.run/probs/captcha-unavailable";
             if (result == TurnstileVerifier.Result.INVALID) {
                 expectedStatus = HttpStatus.FORBIDDEN;
                 expectedDetail = "人机验证未通过";
+                expectedType = "https://www.halo.run/probs/captcha-invalid";
             } else if (result == TurnstileVerifier.Result.CONFIGURATION_ERROR) {
                 expectedDetail = "人机验证配置异常";
+                expectedType = "https://www.halo.run/probs/captcha-configuration-error";
             }
             assertThat(exchange.getResponse().getStatusCode()).isEqualTo(expectedStatus);
-            assertThat(exchange.getResponse().getBodyAsString().block()).contains(expectedDetail);
+            var body = exchange.getResponse().getBodyAsString().block();
+            assertThat(body).contains(expectedDetail);
+            assertThat(CommentCaptchaFilter.createObjectMapper().readTree(body).get("type").asText())
+                .isEqualTo(expectedType);
         }
     }
 }
