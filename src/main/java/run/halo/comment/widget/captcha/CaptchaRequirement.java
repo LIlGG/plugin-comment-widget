@@ -18,7 +18,7 @@ public class CaptchaRequirement {
             return Mono.just(false);
         }
         return ReactiveSecurityContextHolder.getContext()
-            .map(SecurityContext::getAuthentication)
+            .mapNotNull(SecurityContext::getAuthentication)
             .map(authentication -> matches(config, authentication))
             .defaultIfEmpty(matches(config, null));
     }
