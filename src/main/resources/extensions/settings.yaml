@@ -87,19 +87,22 @@ spec:
                   value: "ARITHMETIC"
                 - label: Cloudflare Turnstile
                   value: "TURNSTILE"
-            - $el: a
-              if: "$get(anonymousCommentCaptcha).value === true && $get(type).value === TURNSTILE"
-              attrs:
-                href: https://developers.cloudflare.com/turnstile/get-started/
-                target: _blank
-                rel: noopener noreferrer
-                class: "text-sm underline"
-              children: Cloudflare Turnstile 官方文档
             - $formkit: text
               if: "$get(type).value === TURNSTILE"
               name: turnstileSiteKey
               label: Turnstile Site Key
               validation: required
+              help: Cloudflare Turnstile 官方文档
+              __raw__sectionsSchema:
+                help:
+                  children:
+                    - $el: a
+                      children: Cloudflare Turnstile 官方文档
+                      attrs:
+                        href: https://developers.cloudflare.com/turnstile/get-started/
+                        target: _blank
+                        rel: noopener noreferrer
+                        class: underline
             - $formkit: secret
               if: "$get(type).value === TURNSTILE"
               name: turnstileSecretRef
