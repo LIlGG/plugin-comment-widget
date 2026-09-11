@@ -178,6 +178,10 @@
   <source>Please complete the verification</source>
   <target>Completa la verificación</target>
 </trans-unit>
+<trans-unit id="s59b95f09e3b42060">
+  <source>Verification failed. Please verify again and resubmit.</source>
+  <target>La verificación ha fallado. Vuelve a verificar e intenta enviar de nuevo.</target>
+</trans-unit>
 </body>
 </file>
 </xliff>
