@@ -8,6 +8,7 @@ export interface SubmissionDetail {
   website?: string;
   captchaCode?: string;
   turnstileToken?: string;
+  altchaPayload?: string;
   content: string;
   hidden: boolean;
   uploadIds: string[];

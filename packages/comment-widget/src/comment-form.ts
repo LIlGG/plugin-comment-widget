@@ -21,7 +21,9 @@ import type { ToastManager } from './lit-toast';
 import type { ProblemDetail } from './types';
 import {
   type CaptchaRequiredResponse,
+  getAltchaHeader,
   getCaptchaCodeHeader,
+  getCaptchaMessage,
   isRequireCaptcha,
 } from './utils/captcha';
 import {
@@ -130,7 +132,10 @@ export class CommentForm extends LitElement {
         `${this.baseUrl}/apis/api.halo.run/v1alpha1/comments`,
         commentRequest,
         data.uploadIds,
-        getCaptchaCodeHeader(data.captchaCode ?? '', data.turnstileToken),
+        {
+          ...getCaptchaCodeHeader(data.captchaCode ?? '', data.turnstileToken),
+          ...getAltchaHeader(data.altchaPayload),
+        },
         this.baseUrl
       );
 
@@ -150,7 +155,7 @@ export class CommentForm extends LitElement {
     } catch (error) {
       this.reportSubmissionError(error);
     } finally {
-      this.baseFormRef.value?.resetTurnstile();
+      this.baseFormRef.value?.resetVerification();
       this.submitting = false;
     }
   }
@@ -161,10 +166,9 @@ export class CommentForm extends LitElement {
           error.response as FetchResponse<CaptchaRequiredResponse>
         )
       ) {
-        const { captcha, detail } =
-          error.data as unknown as CaptchaRequiredResponse;
-        this.captcha = captcha ?? '';
-        this.toastManager?.warn(detail);
+        const response = error.data as CaptchaRequiredResponse;
+        this.captcha = response.captcha ?? '';
+        this.toastManager?.warn(getCaptchaMessage(response));
         return;
       }
 
