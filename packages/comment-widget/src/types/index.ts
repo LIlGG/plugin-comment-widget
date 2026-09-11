@@ -22,7 +22,8 @@ interface SecurityConfig {
     audience: 'ALL' | 'ANONYMOUS' | 'ROLES';
     roles?: string[];
     includeAnonymous?: boolean;
-    type: 'ALPHANUMERIC' | 'ARITHMETIC' | 'TURNSTILE';
+    type: 'ALPHANUMERIC' | 'ARITHMETIC' | 'TURNSTILE' | 'ALTCHA';
+    altchaVisible?: boolean;
     turnstileSiteKey?: string;
     ignoreCase: boolean;
     captchaLength: number;

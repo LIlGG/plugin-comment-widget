@@ -22,3 +22,10 @@ export const isRequireCaptcha = (
 ) => {
   return response.status === 403 && response.headers.get('X-Require-Captcha');
 };
+
+export function getAltchaHeader(payload?: string): Record<string, string> {
+  if (!payload) {
+    return {};
+  }
+  return { 'X-Altcha-Payload': payload };
+}

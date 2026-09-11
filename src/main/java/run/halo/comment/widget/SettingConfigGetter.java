@@ -73,6 +73,8 @@ public interface SettingConfigGetter {
 
         private int arithmeticRange = 90;
 
+        private boolean altchaVisible;
+
         private String turnstileSiteKey;
 
         private String turnstileSecretRef;

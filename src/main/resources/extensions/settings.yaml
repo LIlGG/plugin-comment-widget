@@ -114,9 +114,18 @@ spec:
               help: Cloudflare Turnstile 官方文档
               __raw__sectionsSchema:
                 help:
-                  if: "$value === TURNSTILE"
+                  if: "$value === TURNSTILE || $value === ALTCHA"
                   children:
                     - $el: a
+                      if: "$value === ALTCHA"
+                      children: ALTCHA 官方文档
+                      attrs:
+                        href: https://altcha.org/docs/
+                        target: _blank
+                        rel: noopener noreferrer
+                        class: underline
+                    - $el: a
+                      if: "$value === TURNSTILE"
                       children: Cloudflare Turnstile 官方文档
                       attrs:
                         href: https://developers.cloudflare.com/turnstile/get-started/
@@ -130,6 +139,19 @@ spec:
                   value: "ARITHMETIC"
                 - label: Cloudflare Turnstile
                   value: "TURNSTILE"
+                - label: ALTCHA
+                  value: "ALTCHA"
+            - $formkit: radio
+              if: "$get(captchaEnable).value === true && $get(type).value === ALTCHA"
+              name: altchaVisible
+              label: ALTCHA 显示模式
+              value: false
+              help: 两种模式均自动验证，显示模式会展示验证进度和结果。
+              options:
+                - label: 显示模式
+                  value: true
+                - label: 隐藏模式
+                  value: false
             - $formkit: text
               if: "$get(captchaEnable).value === true && $get(type).value === TURNSTILE"
               name: turnstileSiteKey
