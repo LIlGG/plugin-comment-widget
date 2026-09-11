@@ -203,7 +203,7 @@ export class BaseForm extends LitElement {
   override render() {
     return html`
       <form class="form w-full flex flex-col gap-4" @submit="${this.onSubmit}">
-        <comment-editor ${ref(this.editorRef)} .placeholder=${this.configMapData?.editor?.placeholder}></comment-editor>
+        <comment-editor .enableEmoji=${this.configMapData?.editor?.enableEmoji !== false} ${ref(this.editorRef)} .placeholder=${this.configMapData?.editor?.placeholder}></comment-editor>
 
         ${when(
           !this.currentUser && this.allowAnonymousComments,
