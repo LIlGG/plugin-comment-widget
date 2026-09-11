@@ -92,23 +92,31 @@ export class BaseForm extends LitElement {
   }
 
   get showCaptcha() {
-    return (
-      this.configMapData?.security.captcha.anonymousCommentCaptcha &&
-      !this.currentUser &&
-      this.allowAnonymousComments
-    );
+    if (this.configMapData?.captchaRequired !== true) {
+      return false;
+    }
+    if (this.currentUser) {
+      return true;
+    }
+    return this.allowAnonymousComments;
   }
 
   override updated(changedProperties: Map<string, unknown>) {
-    if (
-      changedProperties.has('configMapData') ||
-      changedProperties.has('currentUser') ||
-      changedProperties.has('allowAnonymousComments')
-    ) {
-      if (this.showCaptcha) {
-        this.handleFetchCaptcha();
-      }
+    if (!this.showCaptcha) {
+      return;
     }
+    const captchaDependencies = [
+      'configMapData',
+      'currentUser',
+      'allowAnonymousComments',
+    ];
+    const shouldRefreshCaptcha = captchaDependencies.some((property) =>
+      changedProperties.has(property)
+    );
+    if (!shouldRefreshCaptcha) {
+      return;
+    }
+    this.handleFetchCaptcha();
   }
 
   async handleFetchCaptcha() {
