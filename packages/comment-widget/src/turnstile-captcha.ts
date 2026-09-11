@@ -56,6 +56,9 @@ export class TurnstileCaptcha extends LitElement {
   @state() token = '';
   @state() failed = false;
   @state() interactionRequired = false;
+  @state() private theme: 'light' | 'dark' = 'light';
+  private colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
+  private themeObserver = new MutationObserver(() => this.syncTheme());
   private widgetId?: string;
   private generation = 0;
   private verificationWait = new VerificationWait(() =>
@@ -64,11 +67,32 @@ export class TurnstileCaptcha extends LitElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    for (let element: Element | null = this; element; ) {
+      this.themeObserver.observe(element, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-color-scheme'],
+      });
+      const root = element.getRootNode();
+      element =
+        element.parentElement ||
+        (root instanceof ShadowRoot ? root.host : null);
+    }
+    this.colorScheme.addEventListener('change', this.syncTheme);
+    this.syncTheme();
     void this.updateComplete.then(() => this.mount());
   }
 
+  private syncTheme = () => {
+    const schemes = getComputedStyle(this).colorScheme.split(/\s+/);
+    this.theme =
+      schemes.includes('dark') &&
+      (!schemes.includes('light') || this.colorScheme.matches)
+        ? 'dark'
+        : 'light';
+  };
+
   override updated(changes: Map<string, unknown>) {
-    if (changes.has('siteKey')) {
+    if (changes.has('siteKey') || changes.has('theme')) {
       void this.mount();
     }
   }
@@ -93,6 +117,7 @@ export class TurnstileCaptcha extends LitElement {
       }
       this.widgetId = api.render(container, {
         sitekey: this.siteKey,
+        theme: this.theme,
         action: 'comment',
         size: 'flexible',
         appearance: 'interaction-only',
@@ -177,6 +202,8 @@ export class TurnstileCaptcha extends LitElement {
   }
 
   override disconnectedCallback() {
+    this.themeObserver.disconnect();
+    this.colorScheme.removeEventListener('change', this.syncTheme);
     this.generation++;
     this.removeWidget();
     super.disconnectedCallback();
