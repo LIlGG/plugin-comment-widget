@@ -19,6 +19,8 @@ export class AltchaCaptcha extends LitElement {
 
   private standardReady?: Promise<AltchaWidgetElement | undefined>;
   private resolveManual?: (token: string) => void;
+  private manualTimeout?: ReturnType<typeof setTimeout>;
+  @state() private ready = false;
   @state() private failed = false;
   private pending?: Promise<string>;
   private controller?: AbortController;
@@ -65,6 +67,14 @@ export class AltchaCaptcha extends LitElement {
       return;
     }
     const { state, payload } = event.detail;
+    clearTimeout(this.manualTimeout);
+    if (state === 'verifying') {
+      this.failed = false;
+      this.manualTimeout = setTimeout(() => {
+        this.reset();
+        this.failed = true;
+      }, 60000);
+    }
     this.token = state === 'verified' ? payload || '' : '';
     if (state === 'verified' || state === 'error') {
       this.resolveManual?.(this.token);
@@ -150,6 +160,7 @@ export class AltchaCaptcha extends LitElement {
   }
 
   private async configureWidget(controller?: AbortController) {
+    this.ready = false;
     await import('altcha');
     const language = await this.loadLanguage();
     await this.updateComplete;
@@ -177,9 +188,17 @@ export class AltchaCaptcha extends LitElement {
       type: 'switch',
       workers: 2,
       // Keep network cancellation tied to the same bounded verification attempt.
-      fetch: (input, init) =>
-        fetch(input, { ...init, signal: controller?.signal ?? init?.signal }),
+      fetch: (input, init) => {
+        if (!controller) {
+          this.controller = new AbortController();
+        }
+        return fetch(input, {
+          ...init,
+          signal: controller?.signal ?? this.controller?.signal ?? init?.signal,
+        });
+      },
     });
+    this.ready = true;
     return widget;
   }
 
@@ -203,6 +222,7 @@ export class AltchaCaptcha extends LitElement {
 
   reset() {
     this.generation++;
+    clearTimeout(this.manualTimeout);
     this.controller?.abort();
     this.resolveManual?.('');
     this.resolveManual = undefined;
@@ -220,6 +240,7 @@ export class AltchaCaptcha extends LitElement {
 
   override disconnectedCallback() {
     this.reset();
+    this.ready = false;
     this.standardReady = undefined;
     super.disconnectedCallback();
   }
@@ -233,7 +254,7 @@ export class AltchaCaptcha extends LitElement {
 
   override render() {
     return html`
-      <altcha-widget @statechange=${this.handleStateChange} auto="off" display=${this.display} type="switch"></altcha-widget>
+      <altcha-widget ?hidden=${!this.ready} @statechange=${this.handleStateChange} auto="off" display=${this.display} type="switch"></altcha-widget>
       ${when(
         this.failed,
         () => html`

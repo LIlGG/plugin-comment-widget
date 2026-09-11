@@ -20,7 +20,8 @@ function createCaptcha(
   verify,
   configure = async () => {},
   locale = 'en',
-  loadLanguage = () => {}
+  loadLanguage = () => {},
+  fetchImplementation = globalThis.fetch
 ) {
   const widget = {
     state: 'unverified',
@@ -49,6 +50,7 @@ function createCaptcha(
   runInNewContext(compiled, {
     exports,
     AbortController,
+    fetch: fetchImplementation,
     Date,
     Promise,
     setTimeout,
@@ -216,6 +218,65 @@ test('standard only accepts manual verification, including after reset and expir
   assert.equal(await retry, '');
   changeState('verified', 'before-submit');
   assert.equal(await captcha.waitForToken(), 'before-submit');
+});
+
+test('standard times out active requests, releases submission, and supports retry', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let options;
+  const signals = [];
+  const captcha = createCaptcha(
+    () => assert.fail('Unexpected automatic verification'),
+    async (value) => {
+      options = value;
+    },
+    'en',
+    () => {},
+    async (_input, { signal }) => {
+      signals.push(signal);
+    }
+  );
+  captcha.display = 'standard';
+  await captcha.loadStandardWidget();
+  const pending = captcha.waitForToken();
+  await flush();
+  await options.fetch('/challenge');
+  captcha.handleStateChange({ detail: { state: 'verifying' } });
+  assert.equal(signals[0].aborted, false);
+  t.mock.timers.tick(60000);
+  assert.equal(signals[0].aborted, true);
+  assert.equal(await pending, '');
+  assert.equal(captcha.failed, true);
+  const retry = captcha.waitForToken();
+  await flush();
+  await options.fetch('/challenge');
+  captcha.handleStateChange({ detail: { state: 'verifying' } });
+  assert.notEqual(signals[1], signals[0]);
+  assert.equal(signals[1].aborted, false);
+  captcha.handleStateChange({
+    detail: { state: 'verified', payload: 'retry-token' },
+  });
+  assert.equal(await retry, 'retry-token');
+  t.mock.timers.tick(60000);
+  assert.equal(captcha.token, 'retry-token');
+  assert.equal(captcha.failed, false);
+  captcha.reset();
+  assert.equal(signals[1].aborted, true);
+});
+
+test('keeps the widget hidden until language and challenge configuration are ready', async () => {
+  const captcha = createCaptcha(() => assert.fail('Unexpected verification'));
+  let release;
+  captcha.loadLanguage = () =>
+    new Promise((resolve) => {
+      release = resolve;
+    });
+  const ready = captcha.configureWidget();
+  await flush();
+  assert.equal(captcha.ready, false);
+  release('zh-cn');
+  await ready;
+  assert.equal(captcha.ready, true);
+  assert.match(source, /\?hidden=\$\{!this\.ready\}/);
 });
 
 test('floating waits for submission and anchors verification to the submit button', async () => {
