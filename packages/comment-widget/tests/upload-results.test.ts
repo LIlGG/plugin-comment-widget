@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import type { FileUploadResult } from '../src/utils/upload-api.ts';
 import { applyUploadResults } from '../src/utils/upload-results.ts';
 

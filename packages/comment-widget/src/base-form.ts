@@ -21,6 +21,7 @@ import type { ToastManager } from './lit-toast';
 import baseStyles from './styles/base';
 import type { ConfigMapData } from './types';
 import './comment-editor';
+import { keyed } from 'lit/directives/keyed.js';
 import { when } from 'lit/directives/when.js';
 import { ofetch } from 'ofetch';
 import type { CommentEditor } from './comment-editor';
@@ -121,6 +122,70 @@ export class BaseForm extends LitElement {
 
   @property({ type: Boolean })
   hidePrivateCheckbox = false;
+
+  @property({ type: String })
+  commentName = '';
+
+  @property({ type: String })
+  quoteReplyName = '';
+
+  private draftKey = '';
+  private draftContent = '';
+  @state() private draftHidden = false;
+
+  protected override willUpdate() {
+    const key = `halo-comment-draft:${JSON.stringify([
+      new URL(this.baseUrl || '/', location.href).href,
+      this.group,
+      this.kind,
+      this.name,
+      this.commentName,
+      this.quoteReplyName,
+      this.currentUser?.metadata.name ?? '',
+    ])}`;
+    if (key === this.draftKey) {
+      return;
+    }
+    this.draftKey = key;
+    this.draftContent = '';
+    this.draftHidden = false;
+    window.removeEventListener('beforeunload', this.onBeforeUnload);
+    try {
+      const draft = JSON.parse(localStorage.getItem(key) || 'null');
+      if (typeof draft?.content === 'string') {
+        this.draftContent = draft.content;
+        this.draftHidden = draft.hidden === true;
+        if (this.draftContent) {
+          window.addEventListener('beforeunload', this.onBeforeUnload);
+        }
+      }
+    } catch {
+      // Invalid or unavailable storage must not prevent editing.
+    }
+  }
+
+  private saveDraft() {
+    try {
+      if (this.draftContent) {
+        localStorage.setItem(
+          this.draftKey,
+          JSON.stringify({
+            content: this.draftContent,
+            hidden: this.draftHidden,
+          })
+        );
+      } else {
+        localStorage.removeItem(this.draftKey);
+      }
+    } catch {
+      // Keep editing and the unload warning available if storage is full or blocked.
+    }
+  }
+
+  private onHiddenChange(event: Event) {
+    this.draftHidden = (event.target as HTMLInputElement).checked;
+    this.saveDraft();
+  }
 
   textareaRef: Ref<HTMLTextAreaElement> = createRef<HTMLTextAreaElement>();
 
@@ -239,8 +304,32 @@ export class BaseForm extends LitElement {
     }
   }
 
-  handleOpenLoginPage() {
-    window.location.href = this.loginUrl;
+  private onBeforeUnload = (event: BeforeUnloadEvent) => {
+    event.preventDefault();
+    event.returnValue = '';
+  };
+
+  private onEditorUpdate(
+    event: CustomEvent<{ content: string; characterCount: number }>
+  ) {
+    this.draftContent =
+      event.detail.characterCount > 0 ? event.detail.content : '';
+    this.saveDraft();
+    if (event.detail.characterCount > 0) {
+      window.addEventListener('beforeunload', this.onBeforeUnload);
+    } else {
+      window.removeEventListener('beforeunload', this.onBeforeUnload);
+    }
+  }
+
+  private get privateCommentDescription() {
+    return this.currentUser
+      ? msg(
+          'Currently logged in. After selecting the private option, comments will only be visible to yourself and the site administrator.'
+        )
+      : msg(
+          'You are currently anonymous. After selecting the private option, the comment will only be visible to the site administrator.'
+        );
   }
 
   async handleLogout() {
@@ -252,6 +341,7 @@ export class BaseForm extends LitElement {
       )
     ) {
       try {
+        window.removeEventListener('beforeunload', this.onBeforeUnload);
         window.location.href = `/logout?redirect_uri=${encodeURIComponent(
           window.location.pathname + this.parentDomId
         )}`;
@@ -265,17 +355,16 @@ export class BaseForm extends LitElement {
     return html`<div class="form-account flex items-center gap-2">
       ${when(
         this.currentUser?.spec.avatar,
-        () => html`<div class="form-account-avatar avatar"><img src=${this.currentUser?.spec.avatar || ''} class="size-full object-cover" /></div>
+        () => html`<div class="form-account-avatar avatar"><img src=${this.currentUser?.spec.avatar || ''} alt="" class="size-full object-cover" /></div>
           `
       )}
-      <span class="form-account-name text-base text-text-1 font-semibold">
+      <span class="form-account-name min-w-0 break-all text-base text-text-1 font-semibold">
         ${this.currentUser?.spec.displayName || this.currentUser?.metadata.name}
       </span>
       <button
         @click=${this.handleLogout}
         type="button"
-        class="form-logout text-xs text-text-3 hover:text-text-1 px-3 transition-all py-2 rounded-base border border-muted-3 opacity-100 hover:border-muted-4 hover:opacity-70 border-solid"
-        tabindex="-1"
+        class="form-logout shrink-0 text-xs text-text-3 hover:text-text-1 px-3 transition-[color,border-color,opacity] py-2 rounded-base border border-muted-3 opacity-100 hover:border-muted-4 hover:opacity-70 border-solid"
       >
         ${msg('Logout')}
       </button>
@@ -298,18 +387,13 @@ export class BaseForm extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.removeEventListener('keydown', this.onKeydown);
+    window.removeEventListener('beforeunload', this.onBeforeUnload);
   }
 
   override render() {
     return html`
       <form class="form w-full flex flex-col gap-4" @submit="${this.onSubmit}">
-        <comment-editor
-          .disabled=${this.busy}
-          .enableUpload=${this.canUploadImages}
-          .enableEmoji=${this.configMapData?.editor?.enableEmoji !== false}
-          ${ref(this.editorRef)}
-          .placeholder=${this.configMapData?.editor?.placeholder}
-        ></comment-editor>
+        ${keyed(this.draftKey, html`<comment-editor .disabled=${this.busy} .enableUpload=${this.canUploadImages} .initialContent=${this.draftContent} .enableEmoji=${this.configMapData?.editor?.enableEmoji !== false} ${ref(this.editorRef)} .placeholder=${this.configMapData?.editor?.placeholder} @update=${this.onEditorUpdate}></comment-editor>`)}
 
         ${when(
           !this.currentUser && this.allowAnonymousComments,
@@ -320,6 +404,8 @@ export class BaseForm extends LitElement {
                 value=${this.customAccount.displayName}
                 type="text"
                 placeholder=${msg('Nicename')}
+                aria-label=${msg('Nicename')}
+                autocomplete="nickname"
                 required
                 class="input"
               />
@@ -328,6 +414,9 @@ export class BaseForm extends LitElement {
                 value=${this.customAccount.email}
                 type="email"
                 placeholder=${msg('Email')}
+                aria-label=${msg('Email')}
+                autocomplete="email"
+                spellcheck="false"
                 required
                 class="input"
               />
@@ -336,9 +425,11 @@ export class BaseForm extends LitElement {
                 value=${this.customAccount.website}
                 type="url"
                 placeholder=${msg('Website')}
+                aria-label=${msg('Website')}
+                autocomplete="url"
                 class="input"
               />
-              <a tabindex="-1" href=${this.loginUrl} rel="nofollow" class="form-login-link text-text-3 hover:text-text-1 text-xs transition-all select-none">${msg('(Or login)')}</a>
+              <a href=${this.loginUrl} rel="nofollow" class="form-login-link text-text-3 hover:text-text-1 text-xs transition-colors select-none">${msg('(Or login)')}</a>
             </div>
           `
         )}
@@ -348,14 +439,13 @@ export class BaseForm extends LitElement {
           ${when(
             !this.currentUser && !this.allowAnonymousComments,
             () => html`
-              <button
-                @click=${this.handleOpenLoginPage}
-                class="form-login text-xs text-text-3 hover:text-text-1 px-3 transition-all py-2 rounded-base border border-muted-3 opacity-100 hover:border-muted-4 hover:opacity-70 border-solid"
-                type="button"
-                tabindex="-1"
+              <a
+                href=${this.loginUrl}
+                rel="nofollow"
+                class="form-login text-xs text-text-3 hover:text-text-1 px-3 transition-[color,border-color,opacity] py-2 rounded-base border border-muted-3 opacity-100 hover:border-muted-4 hover:opacity-70 border-solid"
               >
                 ${msg('Login')}
-              </button>
+              </a>
               `
           )}
           <div class="form-actions justify-end flex gap-3 flex-wrap items-center">
@@ -363,11 +453,14 @@ export class BaseForm extends LitElement {
               !this.hidePrivateCheckbox &&
                 this.configMapData?.basic.enablePrivateComment,
               () => html`<div class="flex items-center gap-2">
-                      <input id="hidden" name="hidden" type="checkbox" />
-                      <label for="hidden" class="text-xs select-none text-text-3 hover:text-text-1 transition-all">${msg('Private')}</label>
-                      <base-tooltip content=${this.currentUser ? msg('Currently logged in. After selecting the private option, comments will only be visible to yourself and the site administrator.') : msg('You are currently anonymous. After selecting the private option, the comment will only be visible to the site administrator.')}>
-                        <i class="i-mingcute:information-line size-3.5 text-text-3 block"></i>
+                      <input id="hidden" name="hidden" type="checkbox" .checked=${this.draftHidden} @change=${this.onHiddenChange} />
+                      <label for="hidden" class="text-xs select-none text-text-3 hover:text-text-1 transition-colors">${msg('Private')}</label>
+                      <base-tooltip content=${this.privateCommentDescription}>
+                        <button type="button" aria-label=${msg('Private')} aria-describedby="private-description" class="inline-flex p-1 rounded-base hover:bg-muted-3">
+                          <i class="i-mingcute:information-line size-3.5 text-text-3 block" aria-hidden="true"></i>
+                        </button>
                       </base-tooltip>
+                      <span id="private-description" class="sr-only">${this.privateCommentDescription}</span>
                     </div>`
             )}
 
@@ -378,16 +471,22 @@ export class BaseForm extends LitElement {
                 this.captcha,
               () => html`
                   <div class="form-captcha gap-2 flex items-center">
-                    <img
+                    <button type="button" class="shrink-0 rounded-base" aria-label=${msg('Refresh verification code')}
                       @click=${this.handleFetchCaptcha}
+                    >
+                    <img
                       src="${this.captcha}"
-                      alt="captcha"
+                      alt=""
                       class="h-10 rounded-base border border-gray-100 border-solid"
                     />
+                    </button>
                     <input
                       name="captchaCode"
                       type="text"
                       placeholder=${msg('Please enter the verification code')}
+                      aria-label=${msg('Please enter the verification code')}
+                      autocomplete="off"
+                      spellcheck="false"
                       class="input "
                     />
                   </div>
@@ -420,7 +519,7 @@ export class BaseForm extends LitElement {
             <button
               .disabled=${this.busy}
               type="submit"
-              class="form-submit outline-none focus:shadow-input h-12 text-sm inline-flex border border-primary-1 border-solid items-center justify-center gap-2 bg-primary-1 text-white px-3 rounded-base hover:opacity-80 transition-all"
+              class="form-submit outline-none focus-visible:shadow-input h-12 text-sm inline-flex border border-primary-1 border-solid items-center justify-center gap-2 bg-primary-1 text-white px-3 rounded-base hover:opacity-80 transition-[opacity,box-shadow]"
             >
               ${when(
                 this.showLoading,
@@ -589,13 +688,51 @@ export class BaseForm extends LitElement {
       ?.reset();
   }
 
-  resetForm() {
+  getDraftSnapshot() {
+    return {
+      key: this.draftKey,
+      content: this.draftContent,
+      hidden: this.draftHidden,
+    };
+  }
+
+  resetForm(submittedDraft = this.getDraftSnapshot()) {
+    try {
+      const stored = JSON.parse(
+        localStorage.getItem(submittedDraft.key) || 'null'
+      );
+      if (
+        stored &&
+        (stored.content !== submittedDraft.content ||
+          stored.hidden !== submittedDraft.hidden)
+      ) {
+        return false;
+      }
+      localStorage.removeItem(submittedDraft.key);
+    } catch {
+      // A detached form cannot determine whether another editor has a newer draft.
+      if (!this.isConnected) {
+        return false;
+      }
+    }
+    if (
+      this.draftKey !== submittedDraft.key ||
+      this.draftContent !== submittedDraft.content ||
+      this.draftHidden !== submittedDraft.hidden
+    ) {
+      return false;
+    }
+    this.draftContent = '';
+    this.draftHidden = false;
+    this.saveDraft();
     const form = this.shadowRoot?.querySelector('form');
     form?.reset();
     if (this.editorRef.value?.editor) {
       resetUploadSession(this.editorRef.value.editor);
     }
     this.editorRef.value?.reset();
+    window.removeEventListener('beforeunload', this.onBeforeUnload);
+    return true;
   }
 
   setFocus() {

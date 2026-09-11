@@ -162,6 +162,10 @@
   <source>You are currently anonymous. After selecting the private option, the comment will only be visible to the site administrator.</source>
   <target>Actualmente anónimo. Después de seleccionar la opción privada, el comentario solo será visible para el administrador del sitio.</target>
 </trans-unit>
+<trans-unit id="s44851a8adf059eef">
+  <source>Pinned</source>
+  <target>Fijado</target>
+</trans-unit>
 <trans-unit id="s34239948d1de01f1">
   <source>Verification unavailable. Click to retry.</source>
   <target>Verificación no disponible. Haz clic para reintentar.</target>
@@ -174,9 +178,65 @@
   <source>Please complete the verification</source>
   <target>Completa la verificación</target>
 </trans-unit>
+<trans-unit id="se8662271b21bc06c">
+  <source>Delete this comment and its replies? This cannot be undone.</source>
+  <target>¿Eliminar este comentario y sus respuestas? Esta acción no se puede deshacer.</target>
+</trans-unit>
+<trans-unit id="s7098f8d38ffe5e88">
+  <source>Operation successful</source>
+  <target>Operación realizada correctamente</target>
+</trans-unit>
+<trans-unit id="s023f646163e63d90">
+  <source>Operation failed. Please try again.</source>
+  <target>La operación falló. Inténtalo de nuevo.</target>
+</trans-unit>
+<trans-unit id="s2ca7699f7c5a4996">
+  <source>Manage</source>
+  <target>Administrar</target>
+</trans-unit>
+<trans-unit id="s6f23997fffbecc6a">
+  <source>Cancel approval</source>
+  <target>Cancelar aprobación</target>
+</trans-unit>
+<trans-unit id="se5d01bef737e2e3a">
+  <source>Approve</source>
+  <target>Aprobar</target>
+</trans-unit>
+<trans-unit id="sa3443b99ecf186ea">
+  <source>Unhide</source>
+  <target>Mostrar</target>
+</trans-unit>
+<trans-unit id="s9df212d89cab196d">
+  <source>Hide</source>
+  <target>Ocultar</target>
+</trans-unit>
+<trans-unit id="sdc673e73b5c13aea">
+  <source>Delete</source>
+  <target>Eliminar</target>
+</trans-unit>
+<trans-unit id="s0d25b2b6889f933a">
+  <source>Delete this reply? This cannot be undone.</source>
+  <target>¿Eliminar esta respuesta? Esta acción no se puede deshacer.</target>
+</trans-unit>
 <trans-unit id="s59b95f09e3b42060">
   <source>Verification failed. Please verify again and resubmit.</source>
   <target>La verificación ha fallado. Vuelve a verificar e intenta enviar de nuevo.</target>
+</trans-unit>
+<trans-unit id="sbc0cd0b4dfb7dde1">
+  <source>Unpin</source>
+  <target>Desfijar</target>
+</trans-unit>
+<trans-unit id="s8db89619f41917b4">
+  <source>Pin</source>
+  <target>Fijar</target>
+</trans-unit>
+<trans-unit id="s2406b89e991a4524">
+  <source>Refresh verification code</source>
+  <target>Actualizar código de verificación</target>
+</trans-unit>
+<trans-unit id="s2e192b19ed15fcf6">
+  <source>Page</source>
+  <target>Página</target>
 </trans-unit>
 </body>
 </file>

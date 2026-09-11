@@ -1,10 +1,12 @@
 import type { CommentVo } from '@halo-dev/api-client';
 import { css, html, LitElement } from 'lit';
 import { property, state } from 'lit/decorators.js';
+import type { BaseForm } from './base-form';
 import baseStyles from './styles/base';
 import './comment-replies';
 import './user-avatar';
 import './base-comment-item';
+import './comment-management';
 import { consume } from '@lit/context';
 import { msg } from '@lit/localize';
 import { createRef, type Ref, ref } from 'lit/directives/ref.js';
@@ -104,8 +106,21 @@ export class CommentItem extends LitElement {
     this.showReplies = !this.showReplies;
   }
 
-  onReplyCreated() {
-    this.commentRepliesRef.value?.fetchReplies();
+  onReplyCreated(
+    event: CustomEvent<{ resetForm: (form: BaseForm) => boolean }>
+  ) {
+    const form = this.renderRoot.querySelector('reply-form')?.baseFormRef.value;
+    if (form && event.detail.resetForm(form)) {
+      this.closeReplyForm();
+      this.renderRoot
+        .querySelector<HTMLButtonElement>(
+          this.configMapData?.basic.withReplies
+            ? '.reply-button'
+            : '.show-replies-button'
+        )
+        ?.focus({ preventScroll: true });
+    }
+    this.commentRepliesRef.value?.refreshReplies();
     this.showReplies = true;
   }
 
@@ -135,6 +150,7 @@ export class CommentItem extends LitElement {
       .content="${this.comment?.spec.content || ''}"
       .creationTime="${this.comment?.spec.creationTime}"
       .approved=${this.comment?.spec.approved}
+      .pinned=${this.comment?.spec.top}
       .userWebsite=${this.comment?.spec.owner.annotations?.website}
       .ua=${this.comment?.spec.userAgent}
       .private=${this.comment?.spec.hidden}
@@ -157,7 +173,7 @@ export class CommentItem extends LitElement {
         this.comment?.status?.visibleReplyCount === 0
           ? ''
           : html`
-          <button slot="action" class="icon-button group" type="button" @click="${this.handleShowReplies}" aria-label=${msg('Show replies')}>
+          <button slot="action" class="show-replies-button icon-button group" type="button" @click="${this.handleShowReplies}" aria-label=${msg('Show replies')}>
             <div class="icon-button-icon ">
               <i slot="icon" class="i-tabler:message-circle size-4" aria-hidden="true"></i>
             </div>
@@ -168,7 +184,7 @@ export class CommentItem extends LitElement {
       ${when(
         this.configMapData?.basic.withReplies,
         () => html`
-          <button slot="action" class="icon-button group" type="button" @click="${this.handleToggleReplyForm}" aria-label=${this.showReplyForm ? msg('Cancel reply') : msg('Add reply')}>
+          <button slot="action" class="reply-button icon-button group" type="button" @click="${this.handleToggleReplyForm}" aria-label=${this.showReplyForm ? msg('Cancel reply') : msg('Add reply')}>
             <div class="icon-button-icon ">
               <i slot="icon" class="i-tabler:message-circle-plus size-4" aria-hidden="true"></i>
             </div>
@@ -177,6 +193,7 @@ export class CommentItem extends LitElement {
           `
       )}
 
+      <comment-management slot="action" .target=${this.comment} resource="comments"></comment-management>
       <div slot="footer">
         ${when(
           this.showReplyForm,

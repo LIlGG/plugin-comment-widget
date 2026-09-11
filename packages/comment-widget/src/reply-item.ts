@@ -1,9 +1,11 @@
 import type { CommentVo, ReplyVo } from '@halo-dev/api-client';
 import { css, html, LitElement } from 'lit';
 import { property, state } from 'lit/decorators.js';
+import type { BaseForm } from './base-form';
 import baseStyles from './styles/base';
 import './user-avatar';
 import './base-comment-item';
+import './comment-management';
 import './reply-form';
 import { consume } from '@lit/context';
 import { msg } from '@lit/localize';
@@ -82,6 +84,19 @@ export class ReplyItem extends LitElement {
     this.showReplyForm = false;
   }
 
+  onReplyCreated(
+    event: CustomEvent<{ resetForm: (form: BaseForm) => boolean }>
+  ) {
+    const form = this.renderRoot.querySelector('reply-form')?.baseFormRef.value;
+    if (form && event.detail.resetForm(form)) {
+      this.closeReplyForm();
+      this.renderRoot
+        .querySelector<HTMLButtonElement>('.reply-button')
+        ?.focus({ preventScroll: true });
+    }
+    this.dispatchEvent(new CustomEvent('reload'));
+  }
+
   handleToggleReplyForm() {
     if (this.showReplyForm) {
       this.closeReplyForm();
@@ -153,19 +168,20 @@ export class ReplyItem extends LitElement {
           </div>
           <span class="icon-button-text">${`${this.upvoteCount || 0}`}</span>
         </button>
-        <button slot="action" class="icon-button group" type="button" @click="${this.handleToggleReplyForm}" aria-label=${this.showReplyForm ? msg('Cancel reply') : msg('Reply')}>
+        <button slot="action" class="reply-button icon-button group" type="button" @click="${this.handleToggleReplyForm}" aria-label=${this.showReplyForm ? msg('Cancel reply') : msg('Reply')}>
           <div class="icon-button-icon ">
             <i slot="icon" class="i-tabler:message-circle-plus size-4" aria-hidden="true"></i>
           </div>
           <span class="icon-button-text">${this.showReplyForm ? msg('Cancel reply') : msg('Reply')}</span>
         </button>
+      <comment-management slot="action" .target=${this.reply} resource="replies"></comment-management>
         ${when(
           this.showReplyForm,
           () => html`<div class="reply-form mt-2" slot="footer">
                 <reply-form
                   .comment=${this.comment}
                   .quoteReply=${this.reply}
-                  @reload=${() => this.dispatchEvent(new CustomEvent('reload'))}
+                  @reload=${this.onReplyCreated}
                 ></reply-form>
               </div>`
         )}
@@ -175,7 +191,7 @@ export class ReplyItem extends LitElement {
                 slot="pre-content"
                 @mouseenter=${() => this.handleSetActiveQuoteReply(this.quoteReply)}
                 @mouseleave=${() => this.handleSetActiveQuoteReply()}
-                class="quote-badge cursor-pointer inline-flex items-center gap-1 px-2 py-1.5 rounded-base bg-muted-3 text-text-2 hover:-translate-y-0.5 hover:text-text-1 hover:bg-muted-2 transition-all text-sm font-medium"
+                class="quote-badge cursor-pointer inline-flex items-center gap-1 px-2 py-1.5 rounded-base bg-muted-3 text-text-2 hover:-translate-y-0.5 hover:text-text-1 hover:bg-muted-2 transition-[transform,color,background-color] text-sm font-medium"
                 ><i class="i-ic:round-reply" aria-hidden="true"></i><span>${this.quoteReply?.owner.displayName}</span>
               </span>
               <br slot="pre-content" />`

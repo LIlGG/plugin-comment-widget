@@ -162,6 +162,10 @@
   <source>You are currently anonymous. After selecting the private option, the comment will only be visible to the site administrator.</source>
   <target>当前是匿名状态，选择私密选项后，评论将仅对网站管理员可见。</target>
 </trans-unit>
+<trans-unit id="s44851a8adf059eef">
+  <source>Pinned</source>
+  <target>置顶</target>
+</trans-unit>
 <trans-unit id="s34239948d1de01f1">
   <source>Verification unavailable. Click to retry.</source>
   <target>验证暂不可用，点击重试</target>
@@ -174,9 +178,65 @@
   <source>Please complete the verification</source>
   <target>请完成人机验证</target>
 </trans-unit>
+<trans-unit id="se8662271b21bc06c">
+  <source>Delete this comment and its replies? This cannot be undone.</source>
+  <target>确定删除此评论及其回复？此操作无法撤销。</target>
+</trans-unit>
+<trans-unit id="s7098f8d38ffe5e88">
+  <source>Operation successful</source>
+  <target>操作成功</target>
+</trans-unit>
+<trans-unit id="s023f646163e63d90">
+  <source>Operation failed. Please try again.</source>
+  <target>操作失败，请重试。</target>
+</trans-unit>
+<trans-unit id="s2ca7699f7c5a4996">
+  <source>Manage</source>
+  <target>管理</target>
+</trans-unit>
+<trans-unit id="s6f23997fffbecc6a">
+  <source>Cancel approval</source>
+  <target>取消通过</target>
+</trans-unit>
+<trans-unit id="se5d01bef737e2e3a">
+  <source>Approve</source>
+  <target>审核通过</target>
+</trans-unit>
+<trans-unit id="sa3443b99ecf186ea">
+  <source>Unhide</source>
+  <target>取消隐藏</target>
+</trans-unit>
+<trans-unit id="s9df212d89cab196d">
+  <source>Hide</source>
+  <target>隐藏</target>
+</trans-unit>
+<trans-unit id="sdc673e73b5c13aea">
+  <source>Delete</source>
+  <target>删除</target>
+</trans-unit>
+<trans-unit id="s0d25b2b6889f933a">
+  <source>Delete this reply? This cannot be undone.</source>
+  <target>确定删除此回复？此操作无法撤销。</target>
+</trans-unit>
 <trans-unit id="s59b95f09e3b42060">
   <source>Verification failed. Please verify again and resubmit.</source>
   <target>人机验证未通过，请重新验证后提交。</target>
+</trans-unit>
+<trans-unit id="sbc0cd0b4dfb7dde1">
+  <source>Unpin</source>
+  <target>取消置顶</target>
+</trans-unit>
+<trans-unit id="s8db89619f41917b4">
+  <source>Pin</source>
+  <target>置顶</target>
+</trans-unit>
+<trans-unit id="s2406b89e991a4524">
+  <source>Refresh verification code</source>
+  <target>刷新验证码</target>
+</trans-unit>
+<trans-unit id="s2e192b19ed15fcf6">
+  <source>Page</source>
+  <target>页码</target>
 </trans-unit>
 </body>
 </file>

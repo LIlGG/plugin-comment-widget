@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer, type ServerResponse } from 'node:http';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { UploadSession } from '../src/utils/upload-session.ts';
 
 async function withServer(

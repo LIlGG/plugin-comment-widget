@@ -54,7 +54,7 @@ export class CommentReplies extends LitElement {
   toastManager: ToastManager | undefined;
 
   override render() {
-    return html` <div class="replies-main">
+    return html` <div class="replies-main" @comment-managed=${this.refreshReplies}>
       ${when(
         this.replies.length,
         () => html`<div class="replies-list mt-3">
@@ -68,16 +68,16 @@ export class CommentReplies extends LitElement {
                     .replies=${this.replies}
                     .activeQuoteReply=${this.activeQuoteReply}
                     @set-active-quote-reply=${this.onSetActiveQuoteReply}
-                    @reload=${this.fetchReplies}
+                    @reload=${this.refreshReplies}
                   ></reply-item>`
               )}
             </div>`
       )}
       ${when(this.loading, () => html` <loading-block></loading-block>`)}
       ${when(
-        this.hasNext && !this.loading,
+        this.hasNext,
         () => html`<div class="replies-next flex justify-center my-2">
-            <button class="replies-next-button pagination-button" @click=${this.fetchNext}>${msg('Load more')}</button>
+            <button type="button" class="replies-next-button pagination-button" aria-disabled=${this.loading} aria-busy=${this.loading} @click=${this.fetchNext}>${msg('Load more')}</button>
           </div>`
       )}
     </div>`;
@@ -85,6 +85,13 @@ export class CommentReplies extends LitElement {
 
   onSetActiveQuoteReply(event: CustomEvent) {
     this.activeQuoteReply = event.detail.quoteReply;
+  }
+
+  refreshReplies() {
+    const size = this.configMapData?.basic.replySize ?? 10;
+    return this.fetchReplies({
+      size: Math.max(1, Math.ceil(this.replies.length / size)) * size,
+    });
   }
 
   async fetchReplies(options?: {
@@ -110,6 +117,12 @@ export class CommentReplies extends LitElement {
         }
       );
 
+      const restoreFocus =
+        !data.hasNext &&
+        this.renderRoot
+          .querySelector('.replies-next-button')
+          ?.matches(':focus');
+      const firstNewReply = options?.append ? this.replies.length : 0;
       if (options?.append) {
         this.replies = this.replies.concat(data.items);
       } else {
@@ -120,6 +133,27 @@ export class CommentReplies extends LitElement {
       this.page = data.page;
       this.currentPageSize = data.size;
       this.preloaded = false;
+      if (restoreFocus) {
+        await this.updateComplete;
+        const target =
+          this.renderRoot.querySelectorAll<HTMLElement>('reply-item')[
+            firstNewReply
+          ] || this;
+        const previousTabIndex = target.getAttribute('tabindex');
+        target.addEventListener(
+          'blur',
+          () => {
+            if (previousTabIndex === null) {
+              target.removeAttribute('tabindex');
+            } else {
+              target.setAttribute('tabindex', previousTabIndex);
+            }
+          },
+          { once: true }
+        );
+        target.tabIndex = -1;
+        target.focus({ preventScroll: true });
+      }
     } catch (error) {
       console.error(error);
       this.toastManager?.error(

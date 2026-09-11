@@ -29,6 +29,9 @@ export class BaseCommentItem extends LitElement {
   approved: boolean | undefined;
 
   @property({ type: Boolean })
+  pinned: boolean | undefined;
+
+  @property({ type: Boolean })
   breath: boolean | undefined;
 
   @property({ type: String })
@@ -59,7 +62,7 @@ export class BaseCommentItem extends LitElement {
             this.userWebsite,
             () => html`
               <a
-                class="item-author font-medium text-sm text-text-1 hover:underline"
+                class="item-author min-w-0 break-all font-medium text-sm text-text-1 hover:underline"
                 target="_blank"
                 href=${ifDefined(this.userWebsite)}
                 rel="noopener noreferrer nofollow ugc"
@@ -68,7 +71,7 @@ export class BaseCommentItem extends LitElement {
               </a>
               `,
             () => html`
-              <span class="item-author font-medium text-sm text-text-1">${this.userDisplayName}</span>
+              <span class="item-author min-w-0 break-all font-medium text-sm text-text-1">${this.userDisplayName}</span>
               `
           )}
 
@@ -77,6 +80,14 @@ export class BaseCommentItem extends LitElement {
             () => html`<div class="inline-flex items-center gap-1 bg-muted-3 rounded-base px-1.5 py-1">
                 <i class="i-ri-git-repository-private-line opacity-90 size-3" aria-hidden="true"></i>
                 <span class="text-xs text-text-2">${msg('Private')}</span>
+              </div>`
+          )}
+
+          ${when(
+            this.pinned,
+            () => html`<div class="item-pinned inline-flex items-center gap-1 bg-muted-3 rounded-base px-1.5 py-1">
+                <i class="i-ri-pushpin-line opacity-90 size-3" aria-hidden="true"></i>
+                <span class="text-xs text-text-2">${msg('Pinned')}</span>
               </div>`
           )}
 
@@ -103,6 +114,11 @@ export class BaseCommentItem extends LitElement {
   static override styles = [
     ...baseStyles,
     css`
+      .item-content {
+        content-visibility: auto;
+        contain-intrinsic-size: auto 4em;
+      }
+
       .animate-breath {
         animation: breath 1s ease-in-out infinite;
       }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import test from 'node:test';
+import { test } from 'vitest';
 import { getAltchaHeader, getCaptchaCodeHeader } from '../src/utils/captcha.ts';
 import { UploadSession } from '../src/utils/upload-session.ts';
 

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import { closeHistory, history, redo, undo } from '@tiptap/pm/history';
 import { Fragment, Schema, Slice } from '@tiptap/pm/model';
 import { EditorState } from '@tiptap/pm/state';
+import { test } from 'vitest';
 import { ImageUploadState } from '../src/extension/image-upload-state.ts';
 
 const schema = new Schema({
