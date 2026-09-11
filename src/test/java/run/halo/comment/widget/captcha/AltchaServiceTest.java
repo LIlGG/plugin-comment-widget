@@ -8,6 +8,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.altcha.altcha.v2.Altcha;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -38,6 +41,33 @@ class AltchaServiceTest {
     }
 
     @Test
+    void concurrentReplayDoesNotEnterTheKdf() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var calls = new AtomicInteger();
+        var kdf = Altcha.kdf("PBKDF2/SHA-256");
+        var service = new AltchaService(Ticker.systemTicker(), (parameters, salt, password) -> {
+            if (calls.incrementAndGet() == 1) {
+                entered.countDown();
+                if (!release.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Test verification was not released");
+                }
+            }
+            return kdf.deriveKey(parameters, salt, password);
+        });
+        var token = solve(service.createChallenge().block());
+        var first = service.verify(token).toFuture();
+        try {
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(service.verify(token).block(Duration.ofSeconds(2))).isFalse();
+            assertThat(calls.get()).isEqualTo(1);
+        } finally {
+            release.countDown();
+        }
+        assertThat(first.get(5, TimeUnit.SECONDS)).isTrue();
+    }
+
+    @Test
     void rejectsTamperingWithoutConsumingTheOriginal() throws Exception {
         var service = new AltchaService();
         var challenge = service.createChallenge().block();
@@ -48,6 +78,25 @@ class AltchaServiceTest {
         var tampered = Base64.getEncoder().encodeToString(json.toString().getBytes(StandardCharsets.UTF_8));
         assertThat(service.verify(tampered).block()).isFalse();
         assertThat(service.verify(token).block()).isTrue();
+    }
+
+    @Test
+    void invalidSolutionCannotReuseTheSameChallenge() throws Exception {
+        var calls = new AtomicInteger();
+        var kdf = Altcha.kdf("PBKDF2/SHA-256");
+        var service = new AltchaService(Ticker.systemTicker(), (parameters, salt, password) -> {
+            calls.incrementAndGet();
+            return kdf.deriveKey(parameters, salt, password);
+        });
+        var token = solve(service.createChallenge().block());
+        var json = new ObjectMapper().readTree(Base64.getDecoder().decode(token));
+        ((com.fasterxml.jackson.databind.node.ObjectNode) json.path("solution"))
+            .put("derivedKey", "00".repeat(32));
+        var invalid = Base64.getEncoder().encodeToString(json.toString().getBytes(StandardCharsets.UTF_8));
+        assertThat(service.verify(invalid).block()).isFalse();
+        assertThat(service.verify(invalid).block()).isFalse();
+        assertThat(service.verify(token).block()).isFalse();
+        assertThat(calls.get()).isEqualTo(1);
     }
 
     @Test

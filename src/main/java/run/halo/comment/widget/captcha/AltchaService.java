@@ -15,12 +15,18 @@ import reactor.core.scheduler.Schedulers;
 public class AltchaService {
     private final String secret = Base64.getEncoder().encodeToString(Altcha.randomBytes(32));
     private final Cache<String, Altcha.Challenge> challenges;
+    private final Altcha.KeyDerivationFunction verifier;
 
     public AltchaService() {
         this(Ticker.systemTicker());
     }
 
     AltchaService(Ticker ticker) {
+        this(ticker, Altcha.kdf("PBKDF2/SHA-256"));
+    }
+
+    AltchaService(Ticker ticker, Altcha.KeyDerivationFunction verifier) {
+        this.verifier = verifier;
         challenges = CacheBuilder.newBuilder().maximumSize(1000)
             .expireAfterWrite(Duration.ofMinutes(5)).ticker(ticker).build();
     }
@@ -61,12 +67,13 @@ public class AltchaService {
             if (!issued.equals(submitted)) {
                 return false;
             }
-            var result = Altcha.verifySolution(issued, payload.solution(), secret,
-                Altcha.kdf("PBKDF2/SHA-256"));
-            if (!result.verified()) {
+            // Claim the single attempt before expensive work, including invalid solutions.
+            if (!challenges.asMap().remove(issued.signature(), issued)) {
                 return false;
             }
-            return challenges.asMap().remove(issued.signature(), issued);
+            var result = Altcha.verifySolution(issued, payload.solution(), secret,
+                verifier);
+            return result.verified();
         } catch (Exception invalidPayload) {
             // Malformed payloads fail closed; never log submitted tokens.
             return false;

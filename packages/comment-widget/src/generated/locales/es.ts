@@ -28,6 +28,7 @@
 's5184a3f3e2f7b603': `Actualmente anónimo. Después de seleccionar la opción privada, el comentario solo será visible para el administrador del sitio.`,
 's523eb9043213ff0d': `Itálica`,
 's58a3c1ecd4dd06cf': `Tachado`,
+'s59b95f09e3b42060': `La verificación ha fallado. Vuelve a verificar e intenta enviar de nuevo.`,
 's67749057edb2586b': `Cerrar sesión`,
 's6cb61eeccda272d5': `Bloque de código`,
 's7437373e541a8037': `Apodo`,

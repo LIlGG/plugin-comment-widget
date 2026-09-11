@@ -1,6 +1,6 @@
 package run.halo.comment.widget.captcha;
 
-import com.google.common.util.concurrent.RateLimiter;
+import com.google.common.base.Ticker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.RouterFunctions;
 import org.springframework.web.reactive.function.server.ServerResponse;
+import org.springframework.web.reactive.function.server.ServerRequest;
 import run.halo.app.core.extension.endpoint.CustomEndpoint;
 import run.halo.app.extension.GroupVersion;
 import run.halo.comment.widget.SettingConfigGetter;
@@ -18,7 +19,7 @@ import run.halo.comment.widget.SettingConfigGetter;
 public class AltchaEndpoint implements CustomEndpoint {
     private final AltchaService service;
     private final SettingConfigGetter settings;
-    private final RateLimiter limiter = RateLimiter.create(10);
+    private final AltchaRequestLimiter limiter = new AltchaRequestLimiter(Ticker.systemTicker());
 
     @Override
     public RouterFunction<ServerResponse> endpoint() {
@@ -28,7 +29,7 @@ public class AltchaEndpoint implements CustomEndpoint {
                 if (!captcha.isEnable() || captcha.getType() != CaptchaType.ALTCHA) {
                     return ServerResponse.notFound().build();
                 }
-                if (!limiter.tryAcquire()) {
+                if (!limiter.tryAcquire(clientAddress(request))) {
                     return ServerResponse.status(HttpStatus.TOO_MANY_REQUESTS)
                         .header("Retry-After", "1").cacheControl(CacheControl.noStore()).build();
                 }
@@ -37,6 +38,18 @@ public class AltchaEndpoint implements CustomEndpoint {
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(challenge.toJson()));
             })).build();
+    }
+
+    private String clientAddress(ServerRequest request) {
+        // Use the address resolved by Halo/Spring; do not trust arbitrary forwarding headers.
+        var remote = request.remoteAddress().orElse(null);
+        if (remote == null) {
+            return "unknown";
+        }
+        if (remote.getAddress() == null) {
+            return remote.getHostString();
+        }
+        return remote.getAddress().getHostAddress();
     }
 
     @Override

@@ -25,6 +25,7 @@ import {
   type CaptchaRequiredResponse,
   getAltchaHeader,
   getCaptchaCodeHeader,
+  getCaptchaMessage,
   isRequireCaptcha,
 } from './utils/captcha';
 
@@ -161,10 +162,9 @@ export class ReplyForm extends LitElement {
             error.response as FetchResponse<CaptchaRequiredResponse>
           )
         ) {
-          const { captcha, detail } =
-            error.data as unknown as CaptchaRequiredResponse;
-          this.captcha = captcha ?? '';
-          this.toastManager?.warn(detail);
+          const response = error.data as CaptchaRequiredResponse;
+          this.captcha = response.captcha ?? '';
+          this.toastManager?.warn(getCaptchaMessage(response));
           return;
         }
 
