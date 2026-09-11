@@ -110,6 +110,7 @@ spec:
               if: "$get(captchaEnable).value === true"
               name: type
               id: type
+              key: captchaType
               value: "ALPHANUMERIC"
               help: Cloudflare Turnstile 官方文档
               __raw__sectionsSchema:
@@ -146,6 +147,7 @@ spec:
               name: altchaVisible
               label: ALTCHA 显示模式
               value: false
+              key: altchaVisible
               help: 两种模式均自动验证，显示模式会展示验证进度和结果。
               options:
                 - label: 显示模式
@@ -155,12 +157,14 @@ spec:
             - $formkit: text
               if: "$get(captchaEnable).value === true && $get(type).value === TURNSTILE"
               name: turnstileSiteKey
+              key: turnstileSiteKey
               label: Turnstile Site Key
               validation: required
             - $formkit: secret
               if: "$get(captchaEnable).value === true && $get(type).value === TURNSTILE"
               name: turnstileSecretRef
               label: Turnstile Secret Key
+              key: turnstileSecretRef
               descriptionPreset: 评论组件 Cloudflare Turnstile 验证密钥
               requiredKeys:
                 - key: secretKey
