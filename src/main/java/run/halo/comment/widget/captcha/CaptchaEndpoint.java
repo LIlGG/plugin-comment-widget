@@ -28,8 +28,13 @@ public class CaptchaEndpoint implements CustomEndpoint {
     private Mono<ServerResponse> generateCaptcha(ServerRequest request) {
         return settingConfigGetter.getSecurityConfig()
             .map(SettingConfigGetter.SecurityConfig::getCaptcha)
-            .flatMap(captchaConfig -> captchaManager.generate(request.exchange(), captchaConfig))
-            .flatMap(captcha -> ServerResponse.ok().bodyValue(captcha.imageBase64()));
+            .flatMap(captchaConfig -> {
+                if (captchaConfig.getType() == CaptchaType.TURNSTILE) {
+                    return ServerResponse.noContent().build();
+                }
+                return captchaManager.generate(request.exchange(), captchaConfig)
+                    .flatMap(captcha -> ServerResponse.ok().bodyValue(captcha.imageBase64()));
+            });
     }
 
     @Override

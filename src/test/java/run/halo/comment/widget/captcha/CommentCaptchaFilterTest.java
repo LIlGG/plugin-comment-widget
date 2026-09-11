@@ -33,7 +33,7 @@ class CommentCaptchaFilterTest {
     final CaptchaManager manager = mock(CaptchaManager.class);
     final CaptchaCookieResolverImpl cookies = new CaptchaCookieResolverImpl();
     final CommentCaptchaFilter filter = new CommentCaptchaFilter(
-        settings, manager, cookies, new CaptchaRequirement());
+        settings, manager, mock(TurnstileVerifier.class), cookies, new CaptchaRequirement());
 
     void configure(CaptchaConfig config) {
         when(settings.getSecurityConfig()).thenReturn(Mono.just(

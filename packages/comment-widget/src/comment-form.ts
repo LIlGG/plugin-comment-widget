@@ -127,6 +127,9 @@ export class CommentForm extends LitElement {
           method: 'POST',
           headers: {
             ...getCaptchaCodeHeader(data.captchaCode),
+            ...(data.turnstileToken
+              ? { 'X-Turnstile-Token': data.turnstileToken }
+              : {}),
           },
           body: commentRequest,
         }
@@ -154,7 +157,7 @@ export class CommentForm extends LitElement {
         ) {
           const { captcha, detail } =
             error.data as unknown as CaptchaRequiredResponse;
-          this.captcha = captcha;
+          this.captcha = captcha ?? '';
           this.toastManager?.warn(detail);
           return;
         }
@@ -168,6 +171,7 @@ export class CommentForm extends LitElement {
       }
       this.toastManager?.error(msg('Comment failed, please try again later'));
     } finally {
+      this.baseFormRef.value?.resetTurnstile();
       this.submitting = false;
     }
   }

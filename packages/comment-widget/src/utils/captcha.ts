@@ -14,7 +14,7 @@ export interface CaptchaRequiredResponse {
   title: string;
   status: number;
   detail: string;
-  captcha: string;
+  captcha?: string;
 }
 
 export const isRequireCaptcha = (
