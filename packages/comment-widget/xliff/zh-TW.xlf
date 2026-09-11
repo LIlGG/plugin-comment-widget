@@ -162,6 +162,10 @@
   <source>You are currently anonymous. After selecting the private option, the comment will only be visible to the site administrator.</source>
   <target>目前是匿名狀態，選擇私密選項後，評論將僅對網站管理員可見。</target>
 </trans-unit>
+<trans-unit id="s44851a8adf059eef">
+  <source>Pinned</source>
+  <target>置頂</target>
+</trans-unit>
 <trans-unit id="s34239948d1de01f1">
   <source>Verification unavailable. Click to retry.</source>
   <target>驗證暫不可用，點擊重試</target>

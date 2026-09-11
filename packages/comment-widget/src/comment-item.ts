@@ -135,6 +135,7 @@ export class CommentItem extends LitElement {
       .content="${this.comment?.spec.content || ''}"
       .creationTime="${this.comment?.spec.creationTime}"
       .approved=${this.comment?.spec.approved}
+      .pinned=${this.comment?.spec.top}
       .userWebsite=${this.comment?.spec.owner.annotations?.website}
       .ua=${this.comment?.spec.userAgent}
       .private=${this.comment?.spec.hidden}

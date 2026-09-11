@@ -24,6 +24,7 @@
 's35c3125c7750681e': `Cita`,
 's3643189d1abbb7f4': `Código`,
 's3fb33d17bad61aa9': `Comentario enviado con éxito, pendiente de revisión`,
+'s44851a8adf059eef': `Fijado`,
 's4c0e15f9073382e6': `Error al obtener el código de verificación`,
 's5184a3f3e2f7b603': `Actualmente anónimo. Después de seleccionar la opción privada, el comentario solo será visible para el administrador del sitio.`,
 's523eb9043213ff0d': `Itálica`,
