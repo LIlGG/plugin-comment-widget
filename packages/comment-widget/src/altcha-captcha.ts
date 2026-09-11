@@ -9,16 +9,16 @@ import baseStyles from './styles/base';
 
 export class AltchaCaptcha extends LitElement {
   @property() challengeUrl = '';
-  @property({ type: Boolean, reflect: true }) visible = false;
+  @property({ reflect: true }) display: 'standard' | 'floating' = 'floating';
+  @property({ type: Boolean }) hideLogo = false;
+  @property({ type: Boolean }) hideFooter = false;
 
-  private get displayMode() {
-    if (this.visible) {
-      return 'standard';
-    }
-    return 'invisible';
+  get interactionRequired() {
+    return this.display === 'standard' && !this.token;
   }
 
-  readonly interactionRequired = false;
+  private standardReady?: Promise<AltchaWidgetElement | undefined>;
+  private resolveManual?: (token: string) => void;
   @state() private failed = false;
   private pending?: Promise<string>;
   private controller?: AbortController;
@@ -28,12 +28,57 @@ export class AltchaCaptcha extends LitElement {
 
   override connectedCallback() {
     super.connectedCallback();
-    void this.updateComplete.then(() => this.waitForToken());
+    void this.updateComplete.then(() => {
+      if (this.display === 'standard') {
+        void this.loadStandardWidget();
+      }
+    });
+  }
+
+  private loadStandardWidget() {
+    this.standardReady ??= this.configureWidget().catch(() => {
+      this.failed = true;
+      this.standardReady = undefined;
+      return undefined;
+    });
+    return this.standardReady;
+  }
+
+  private async waitForManualToken(): Promise<string> {
+    const widget = await this.loadStandardWidget();
+    if (!widget || !this.isConnected) {
+      return '';
+    }
+    if (widget.getState() === 'verified') {
+      return this.token;
+    }
+    this.pending ??= new Promise<string>((resolve) => {
+      this.resolveManual = resolve;
+    });
+    return this.pending;
+  }
+
+  private handleStateChange(
+    event: CustomEvent<{ state: string; payload?: string }>
+  ) {
+    if (this.display !== 'standard') {
+      return;
+    }
+    const { state, payload } = event.detail;
+    this.token = state === 'verified' ? payload || '' : '';
+    if (state === 'verified' || state === 'error') {
+      this.resolveManual?.(this.token);
+      this.resolveManual = undefined;
+      this.pending = undefined;
+    }
   }
 
   waitForToken(): Promise<string> {
     if (!this.isConnected) {
       return Promise.resolve('');
+    }
+    if (this.display === 'standard') {
+      return this.waitForManualToken();
     }
     if (this.token && Date.now() < this.expiresAt) {
       return Promise.resolve(this.token);
@@ -104,33 +149,46 @@ export class AltchaCaptcha extends LitElement {
     }
   }
 
-  private async solve(controller: AbortController): Promise<string> {
+  private async configureWidget(controller?: AbortController) {
     await import('altcha');
     const language = await this.loadLanguage();
     await this.updateComplete;
-    if (controller.signal.aborted || !this.isConnected) {
-      return '';
+    if (controller?.signal.aborted || !this.isConnected) {
+      return undefined;
     }
     const widget =
       this.renderRoot.querySelector<AltchaWidgetElement>('altcha-widget');
     if (!widget || !this.challengeUrl) {
-      return '';
+      return undefined;
     }
     widget.reset();
     await widget.configure({
       challenge: this.challengeUrl,
       language,
       auto: 'off',
-      display: this.displayMode,
+      display: this.display,
+      hideLogo: this.hideLogo,
+      hideFooter: this.hideFooter,
+      // The widget cannot find the form across this component's shadow root.
+      floatingAnchor:
+        this.parentElement?.querySelector<HTMLButtonElement>(
+          'button[type="submit"]'
+        ) ?? undefined,
       type: 'switch',
       workers: 2,
       // Keep network cancellation tied to the same bounded verification attempt.
       fetch: (input, init) =>
-        fetch(input, { ...init, signal: controller.signal }),
+        fetch(input, { ...init, signal: controller?.signal ?? init?.signal }),
     });
-    if (controller.signal.aborted) {
+    return widget;
+  }
+
+  private async solve(controller: AbortController): Promise<string> {
+    const widget = await this.configureWidget(controller);
+    if (!widget || controller.signal.aborted) {
       return '';
     }
+    widget.show();
     const result = await widget.verify({ controller });
     if (controller.signal.aborted || !result?.payload) {
       return '';
@@ -146,17 +204,23 @@ export class AltchaCaptcha extends LitElement {
   reset() {
     this.generation++;
     this.controller?.abort();
+    this.resolveManual?.('');
+    this.resolveManual = undefined;
     this.pending = undefined;
     this.token = '';
     this.expiresAt = 0;
     this.failed = false;
-    this.renderRoot
-      .querySelector<AltchaWidgetElement>('altcha-widget')
-      ?.reset?.();
+    const widget =
+      this.renderRoot.querySelector<AltchaWidgetElement>('altcha-widget');
+    widget?.reset?.();
+    if (this.display === 'floating') {
+      widget?.hide?.();
+    }
   }
 
   override disconnectedCallback() {
     this.reset();
+    this.standardReady = undefined;
     super.disconnectedCallback();
   }
 
@@ -164,12 +228,12 @@ export class AltchaCaptcha extends LitElement {
     ...baseStyles,
     // ALTCHA renders in light DOM, inside this component's shadow root.
     unsafeCSS(altchaStyles.replaceAll(':root', ':host')),
-    css`:host { display: block; max-width: 100%; flex-shrink: 0; } :host([visible]) { width: 320px; } @unocss-placeholder;`,
+    css`:host { display: block; max-width: 100%; flex-shrink: 0; } :host([display="standard"]) { width: 320px; } @unocss-placeholder;`,
   ];
 
   override render() {
     return html`
-      <altcha-widget ?hidden=${!this.visible} auto="off" display=${this.displayMode} type="switch"></altcha-widget>
+      <altcha-widget @statechange=${this.handleStateChange} auto="off" display=${this.display} type="switch"></altcha-widget>
       ${when(
         this.failed,
         () => html`

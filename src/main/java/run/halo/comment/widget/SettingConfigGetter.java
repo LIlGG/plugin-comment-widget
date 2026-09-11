@@ -73,7 +73,11 @@ public interface SettingConfigGetter {
 
         private int arithmeticRange = 90;
 
-        private boolean altchaVisible;
+        private String altchaDisplay = "floating";
+
+        private boolean altchaHideLogo;
+
+        private boolean altchaHideFooter;
 
         private String turnstileSiteKey;
 

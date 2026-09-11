@@ -381,7 +381,9 @@ export class BaseForm extends LitElement {
               this.showCaptcha && this.useAltcha && this.altchaReady,
               () => html`
               <comment-altcha-captcha
-                .visible=${this.configMapData?.security.captcha.altchaVisible === true}
+                .display=${this.configMapData?.security.captcha.altchaDisplay || 'floating'}
+                .hideLogo=${this.configMapData?.security.captcha.altchaHideLogo === true}
+                .hideFooter=${this.configMapData?.security.captcha.altchaHideFooter === true}
                 .challengeUrl=${`${this.baseUrl}/apis/api.commentwidget.halo.run/v1alpha1/captcha/-/altcha`}
               ></comment-altcha-captcha>
             `

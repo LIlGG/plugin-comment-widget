@@ -117,6 +117,9 @@ spec:
                 help:
                   if: "$value === TURNSTILE || $value === ALTCHA"
                   children:
+                    - $el: span
+                      if: "$value === ALTCHA"
+                      children: ALTCHA 仅支持在 HTTPS 环境下使用。
                     - $el: a
                       if: "$value === ALTCHA"
                       children: ALTCHA 官方文档
@@ -144,16 +147,28 @@ spec:
                   value: "ALTCHA"
             - $formkit: radio
               if: "$get(captchaEnable).value === true && $get(type).value === ALTCHA"
-              name: altchaVisible
+              name: altchaDisplay
               label: ALTCHA 显示模式
-              value: false
-              key: altchaVisible
-              help: 两种模式均自动验证，显示模式会展示验证进度和结果。
+              value: floating
+              key: altchaDisplay
+              help: 标准模式需要用户手动点击验证；自动模式在用户提交时自动验证，以浮层展示验证进度和结果。
               options:
-                - label: 显示模式
-                  value: true
-                - label: 隐藏模式
-                  value: false
+                - label: 标准模式
+                  value: standard
+                - label: 自动模式
+                  value: floating
+            - $formkit: checkbox
+              if: "$get(captchaEnable).value === true && $get(type).value === ALTCHA"
+              name: altchaHideLogo
+              key: altchaHideLogo
+              label: 隐藏 ALTCHA 标志
+              value: false
+            - $formkit: checkbox
+              if: "$get(captchaEnable).value === true && $get(type).value === ALTCHA"
+              name: altchaHideFooter
+              key: altchaHideFooter
+              label: 隐藏 ALTCHA 页脚
+              value: false
             - $formkit: text
               if: "$get(captchaEnable).value === true && $get(type).value === TURNSTILE"
               name: turnstileSiteKey

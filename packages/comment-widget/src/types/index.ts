@@ -23,7 +23,9 @@ interface SecurityConfig {
     roles?: string[];
     includeAnonymous?: boolean;
     type: 'ALPHANUMERIC' | 'ARITHMETIC' | 'TURNSTILE' | 'ALTCHA';
-    altchaVisible?: boolean;
+    altchaDisplay?: 'standard' | 'floating';
+    altchaHideLogo?: boolean;
+    altchaHideFooter?: boolean;
     turnstileSiteKey?: string;
     ignoreCase: boolean;
     captchaLength: number;
