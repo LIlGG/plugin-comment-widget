@@ -130,7 +130,7 @@ export class CommentForm extends LitElement {
         `${this.baseUrl}/apis/api.halo.run/v1alpha1/comments`,
         commentRequest,
         data.uploadIds,
-        getCaptchaCodeHeader(data.captchaCode ?? ''),
+        getCaptchaCodeHeader(data.captchaCode ?? '', data.turnstileToken),
         this.baseUrl
       );
 
@@ -150,6 +150,7 @@ export class CommentForm extends LitElement {
     } catch (error) {
       this.reportSubmissionError(error);
     } finally {
+      this.baseFormRef.value?.resetTurnstile();
       this.submitting = false;
     }
   }
@@ -162,7 +163,7 @@ export class CommentForm extends LitElement {
       ) {
         const { captcha, detail } =
           error.data as unknown as CaptchaRequiredResponse;
-        this.captcha = captcha;
+        this.captcha = captcha ?? '';
         this.toastManager?.warn(detail);
         return;
       }

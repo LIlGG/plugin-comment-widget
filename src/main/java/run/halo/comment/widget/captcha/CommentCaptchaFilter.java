@@ -40,6 +40,7 @@ public class CommentCaptchaFilter implements AfterSecurityWebFilter {
 
     private final SettingConfigGetter settingConfigGetter;
     private final CaptchaManager captchaManager;
+    private final TurnstileVerifier turnstileVerifier;
     private final CaptchaCookieResolverImpl captchaCookieResolver;
     private final CaptchaRequirement captchaRequirement;
 
@@ -63,8 +64,47 @@ public class CommentCaptchaFilter implements AfterSecurityWebFilter {
                     if (!required) {
                         return chain.filter(exchange);
                     }
+                    if (config.getType() == CaptchaType.TURNSTILE) {
+                        return validateTurnstile(exchange, chain, config);
+                    }
                     return validateCaptcha(exchange, chain, config);
                 }));
+    }
+
+    private Mono<Void> validateTurnstile(ServerWebExchange exchange, WebFilterChain chain,
+                                          SettingConfigGetter.CaptchaConfig config) {
+        return turnstileVerifier.verify(
+                exchange.getRequest().getHeaders().getFirst("X-Turnstile-Token"), config)
+            .flatMap(result -> {
+                if (result == TurnstileVerifier.Result.VALID) {
+                    return chain.filter(exchange);
+                }
+                return sendTurnstileRequiredResponse(exchange, result);
+            });
+    }
+
+    private Mono<Void> sendTurnstileRequiredResponse(ServerWebExchange exchange,
+                                                       TurnstileVerifier.Result result) {
+        var status = HttpStatus.FORBIDDEN;
+        var detail = "人机验证未通过，请重新验证后提交";
+        var problemType = CAPTCHA_INVALID_TYPE;
+        if (result == TurnstileVerifier.Result.CONFIGURATION_ERROR) {
+            status = HttpStatus.SERVICE_UNAVAILABLE;
+            detail = "人机验证配置异常，请联系站点管理员";
+            problemType = "https://www.halo.run/probs/captcha-configuration-error";
+        } else if (result == TurnstileVerifier.Result.UNAVAILABLE) {
+            status = HttpStatus.SERVICE_UNAVAILABLE;
+            detail = "人机验证服务暂不可用，请稍后重试";
+            problemType = "https://www.halo.run/probs/captcha-unavailable";
+        }
+        exchange.getResponse().setStatusCode(status);
+        addHeaderIfAbsent(exchange.getResponse().getHeaders(), CAPTCHA_REQUIRED_HEADER, "true");
+        addHeaderIfAbsent(exchange.getResponse().getHeaders(), HttpHeaders.CONTENT_TYPE, CONTENT_TYPE);
+        var problem = ProblemDetail.forStatusAndDetail(status, detail);
+        problem.setType(URI.create(problemType));
+        problem.setTitle("Turnstile Verification");
+        var bytes = getResponseData(problem);
+        return exchange.getResponse().writeWith(Mono.just(exchange.getResponse().bufferFactory().wrap(bytes)));
     }
 
     private Mono<Void> sendCaptchaRequiredResponse(ServerWebExchange exchange,

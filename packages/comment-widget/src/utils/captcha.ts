@@ -1,6 +1,12 @@
 import type { FetchResponse } from 'ofetch';
 
-export const getCaptchaCodeHeader = (code: string): Record<string, string> => {
+export const getCaptchaCodeHeader = (
+  code: string,
+  turnstileToken?: string
+): Record<string, string> => {
+  if (turnstileToken) {
+    return { 'X-Turnstile-Token': turnstileToken };
+  }
   if (!code || code.trim().length === 0) {
     return {};
   }
@@ -14,7 +20,7 @@ export interface CaptchaRequiredResponse {
   title: string;
   status: number;
   detail: string;
-  captcha: string;
+  captcha?: string;
 }
 
 export const isRequireCaptcha = (

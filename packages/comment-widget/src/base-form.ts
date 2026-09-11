@@ -26,12 +26,14 @@ import { ofetch } from 'ofetch';
 import type { CommentEditor } from './comment-editor';
 import { cleanHtml } from './utils/html';
 import './base-tooltip';
+import './turnstile-captcha';
 import {
   resetUploadSession,
   uploadEditorFiles,
   uploadedIds,
   uploadSession,
 } from './extension/editor-upload';
+import type { TurnstileCaptcha } from './turnstile-captcha';
 
 export class BaseForm extends LitElement {
   @consume({ context: baseUrlContext })
@@ -72,6 +74,46 @@ export class BaseForm extends LitElement {
   @property({ type: Boolean })
   submitting = false;
 
+  @state()
+  private waitingForVerification = false;
+
+  @state()
+  private verificationInteractionRequired = false;
+
+  private get showLoading() {
+    if (this.submitting) {
+      return true;
+    }
+    if (this.verificationInteractionRequired) {
+      return false;
+    }
+    return this.waitingForVerification;
+  }
+
+  private get submitLabel() {
+    if (!this.waitingForVerification) {
+      return msg('Submit');
+    }
+    if (this.verificationInteractionRequired) {
+      return msg('Please complete the verification');
+    }
+    return msg('Verifying…');
+  }
+
+  private handleVerificationInteraction(event: CustomEvent<boolean>) {
+    this.verificationInteractionRequired = event.detail;
+  }
+
+  private get busy() {
+    if (this.uploading) {
+      return true;
+    }
+    if (this.waitingForVerification) {
+      return true;
+    }
+    return this.submitting;
+  }
+
   @consume({ context: toastContext, subscribe: true })
   @state()
   toastManager: ToastManager | undefined;
@@ -99,6 +141,10 @@ export class BaseForm extends LitElement {
     return `/login?redirect_uri=${encodeURIComponent(
       window.location.pathname + this.parentDomId
     )}`;
+  }
+
+  get useTurnstile() {
+    return this.configMapData?.security.captcha.type === 'TURNSTILE';
   }
 
   get showCaptcha() {
@@ -130,7 +176,7 @@ export class BaseForm extends LitElement {
   }
 
   async handleFetchCaptcha() {
-    if (!this.showCaptcha) {
+    if (!this.showCaptcha || this.useTurnstile) {
       return;
     }
 
@@ -214,7 +260,7 @@ export class BaseForm extends LitElement {
     return html`
       <form class="form w-full flex flex-col gap-4" @submit="${this.onSubmit}">
         <comment-editor
-          .disabled=${this.submitting || this.uploading}
+          .disabled=${this.busy}
           .enableUpload=${this.canUploadImages}
           .enableEmoji=${this.configMapData?.editor?.enableEmoji !== false}
           ${ref(this.editorRef)}
@@ -282,7 +328,7 @@ export class BaseForm extends LitElement {
             )}
 
             ${when(
-              this.showCaptcha && this.captcha,
+              this.showCaptcha && !this.useTurnstile && this.captcha,
               () => html`
                   <div class="form-captcha gap-2 flex items-center">
                     <img
@@ -301,18 +347,20 @@ export class BaseForm extends LitElement {
               `
             )}
 
+            ${when(this.showCaptcha && this.useTurnstile, () => html`<turnstile-captcha @interaction-required-change=${this.handleVerificationInteraction} .siteKey=${this.configMapData?.security.captcha.turnstileSiteKey || ''}></turnstile-captcha>`)}
+
             <button
-              .disabled=${this.submitting || this.uploading}
+              .disabled=${this.busy}
               type="submit"
               class="form-submit outline-none focus:shadow-input h-12 text-sm inline-flex border border-primary-1 border-solid items-center justify-center gap-2 bg-primary-1 text-white px-3 rounded-base hover:opacity-80 transition-all"
             >
               ${when(
-                this.submitting,
+                this.showLoading,
                 () => html`<icon-loading></icon-loading>`,
                 () =>
                   html`<i class="i-mingcute-send-line size-5" aria-hidden="true"></i>`
               )}
-              ${msg('Submit')}
+              ${this.submitLabel}
             </button>
           </div>
         </div>
@@ -351,8 +399,8 @@ export class BaseForm extends LitElement {
     await Promise.allSettled(submissions);
   }
 
-  private async submitData(data: Record<string, unknown>) {
-    if (this.submitting || this.uploading) {
+  private async submitData() {
+    if (this.busy) {
       return;
     }
     const editor = this.editorRef.value?.editor;
@@ -379,7 +427,23 @@ export class BaseForm extends LitElement {
         return;
       }
 
-      await this.dispatchSubmission(data, content, editor);
+      const turnstileToken = await this.waitForTurnstile();
+      if (turnstileToken === undefined) {
+        return;
+      }
+      if (!this.isConnected || editor.isDestroyed) {
+        return;
+      }
+      const form = this.shadowRoot?.querySelector('form');
+      if (!form?.reportValidity()) {
+        return;
+      }
+      const data = Object.fromEntries(new FormData(form).entries());
+      await this.dispatchSubmission(
+        { ...data, turnstileToken },
+        content,
+        editor
+      );
     } finally {
       this.uploading = false;
       if (!editor.isDestroyed) {
@@ -404,7 +468,38 @@ export class BaseForm extends LitElement {
       })
     );
 
-    void this.submitData(data);
+    void this.submitData();
+  }
+
+  private async waitForTurnstile(): Promise<string | undefined> {
+    if (!this.showCaptcha || !this.useTurnstile) {
+      return '';
+    }
+    const turnstile =
+      this.shadowRoot?.querySelector<TurnstileCaptcha>('turnstile-captcha');
+    this.verificationInteractionRequired =
+      turnstile?.interactionRequired ?? false;
+    this.waitingForVerification = true;
+    try {
+      const token = await turnstile?.waitForToken();
+      if (token) {
+        return token;
+      }
+      if (this.isConnected) {
+        this.toastManager?.warn(
+          msg('Verification unavailable. Click to retry.')
+        );
+      }
+      return undefined;
+    } finally {
+      this.waitingForVerification = false;
+    }
+  }
+
+  resetTurnstile() {
+    this.shadowRoot
+      ?.querySelector<TurnstileCaptcha>('turnstile-captcha')
+      ?.reset();
   }
 
   resetForm() {
