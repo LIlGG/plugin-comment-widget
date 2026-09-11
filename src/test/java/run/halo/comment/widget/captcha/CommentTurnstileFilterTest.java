@@ -9,7 +9,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
-import org.springframework.security.web.server.context.ServerSecurityContextRepository;
 import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 import run.halo.comment.widget.SettingConfigGetter;
@@ -22,17 +21,15 @@ class CommentTurnstileFilterTest {
             "/apis/api.halo.run/v1alpha1/comments/example/reply"}) {
             var settings = mock(SettingConfigGetter.class);
             var verifier = mock(TurnstileVerifier.class);
-            var context = mock(ServerSecurityContextRepository.class);
             var chain = mock(WebFilterChain.class);
             var config = new SettingConfigGetter.CaptchaConfig()
-                .setAnonymousCommentCaptcha(true).setType(CaptchaType.TURNSTILE);
+                .setEnable(true).setType(CaptchaType.TURNSTILE);
             when(settings.getSecurityConfig()).thenReturn(Mono.just(new SettingConfigGetter.SecurityConfig().setCaptcha(config)));
-            when(context.load(any())).thenReturn(Mono.empty());
             when(verifier.verify(isNull(), eq(config))).thenReturn(Mono.just(result));
             var handlerCalled = new java.util.concurrent.atomic.AtomicBoolean();
             when(chain.filter(any())).thenReturn(Mono.fromRunnable(() -> handlerCalled.set(true)));
             var filter = new CommentCaptchaFilter(settings, mock(CaptchaManager.class), verifier,
-                mock(CaptchaCookieResolverImpl.class), context);
+                mock(CaptchaCookieResolverImpl.class), new CaptchaRequirement());
             var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(path));
             filter.filter(exchange, chain).block();
             if (result == TurnstileVerifier.Result.VALID) {
@@ -57,5 +54,53 @@ class CommentTurnstileFilterTest {
             assertThat(CommentCaptchaFilter.createObjectMapper().readTree(body).get("type").asText())
                 .isEqualTo(expectedType);
         }
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "ALL, false, true, reader, true",
+        "ANONYMOUS, false, true, reader, false",
+        "ROLES, false, true, reader, true",
+        "ROLES, false, true, editor, false",
+        "ROLES, true, true, anonymousUser, true",
+        "ROLES, false, true, anonymousUser, false",
+        "ALL, false, false, reader, false"
+    })
+    void appliesAudienceRulesBeforeTurnstile(
+        SettingConfigGetter.CaptchaConfig.CaptchaAudience audience,
+        boolean includeAnonymous, boolean enabled, String username, boolean required) {
+        var settings = mock(SettingConfigGetter.class);
+        var verifier = mock(TurnstileVerifier.class);
+        var config = new SettingConfigGetter.CaptchaConfig().setEnable(enabled)
+            .setType(CaptchaType.TURNSTILE).setAudience(audience)
+            .setRoles(java.util.Set.of("reader")).setIncludeAnonymous(includeAnonymous);
+        when(settings.getSecurityConfig()).thenReturn(Mono.just(
+            new SettingConfigGetter.SecurityConfig().setCaptcha(config)));
+        when(verifier.verify(any(), eq(config))).thenReturn(Mono.just(TurnstileVerifier.Result.VALID));
+        var authentication = org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+            .authenticated(username, "", java.util.List.of(
+                new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + username)));
+        for (var path : java.util.List.of("/apis/api.halo.run/v1alpha1/comments",
+            "/apis/api.halo.run/v1alpha1/comments/example/reply")) {
+            var filter = new CommentCaptchaFilter(settings, mock(CaptchaManager.class), verifier,
+                mock(CaptchaCookieResolverImpl.class), new CaptchaRequirement());
+            var chain = mock(WebFilterChain.class);
+            when(chain.filter(any())).thenReturn(Mono.empty());
+            var exchange = MockServerWebExchange.from(MockServerHttpRequest.post(path)
+                .header("X-Turnstile-Token", "token"));
+            var result = filter.filter(exchange, chain);
+            if (!username.equals("anonymousUser")) {
+                result = result.contextWrite(
+                    org.springframework.security.core.context.ReactiveSecurityContextHolder
+                        .withAuthentication(authentication));
+            }
+            result.block();
+            verify(chain).filter(exchange);
+        }
+        if (required) {
+            verify(verifier, times(2)).verify("token", config);
+            return;
+        }
+        verifyNoInteractions(verifier);
     }
 }
