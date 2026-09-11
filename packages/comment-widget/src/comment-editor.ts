@@ -79,8 +79,14 @@ export class CommentEditor extends LitElement {
   @property({ type: String })
   placeholder: string | undefined;
 
+  @property({ type: String, attribute: 'initial-content' })
+  initialContent = '';
+
   @property({ type: Boolean, attribute: 'keep-alive' })
   keepAlive = false;
+
+  @property({ type: Boolean })
+  enableEmoji = true;
 
   @state()
   editor: Editor | undefined;
@@ -105,6 +111,7 @@ export class CommentEditor extends LitElement {
 
     this.editor = new Editor({
       element: this.shadowRoot?.getElementById('editor-container'),
+      content: this.initialContent,
       extensions: [
         StarterKit.configure({
           heading: false,
@@ -190,10 +197,15 @@ export class CommentEditor extends LitElement {
           ${repeat(actionItems, (item) =>
             this.renderActionItem(item, this.editor)
           )}
-          ${this.renderActionItem({ type: 'separator' })}
-          <li class="flex items-center">
-            <emoji-button @emoji-select=${this.onEmojiSelect}></emoji-button>
-          </li>
+          ${when(
+            this.enableEmoji,
+            () => html`
+            ${this.renderActionItem({ type: 'separator' })}
+            <li class="flex items-center">
+              <emoji-button @emoji-select=${this.onEmojiSelect}></emoji-button>
+            </li>
+          `
+          )}
         </ul>
       </div>`;
   }

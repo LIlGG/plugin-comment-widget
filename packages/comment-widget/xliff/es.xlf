@@ -166,6 +166,18 @@
   <source>Pinned</source>
   <target>Fijado</target>
 </trans-unit>
+<trans-unit id="s34239948d1de01f1">
+  <source>Verification unavailable. Click to retry.</source>
+  <target>Verificación no disponible. Haz clic para reintentar.</target>
+</trans-unit>
+<trans-unit id="s067e961bb67cf3f6">
+  <source>Verifying…</source>
+  <target>Verificando…</target>
+</trans-unit>
+<trans-unit id="s107ccef507b51f2c">
+  <source>Please complete the verification</source>
+  <target>Completa la verificación</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

@@ -166,6 +166,18 @@
   <source>Pinned</source>
   <target>置顶</target>
 </trans-unit>
+<trans-unit id="s34239948d1de01f1">
+  <source>Verification unavailable. Click to retry.</source>
+  <target>验证暂不可用，点击重试</target>
+</trans-unit>
+<trans-unit id="s067e961bb67cf3f6">
+  <source>Verifying…</source>
+  <target>正在验证…</target>
+</trans-unit>
+<trans-unit id="s107ccef507b51f2c">
+  <source>Please complete the verification</source>
+  <target>请完成人机验证</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

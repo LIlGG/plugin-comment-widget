@@ -166,6 +166,18 @@
   <source>Pinned</source>
   <target>置頂</target>
 </trans-unit>
+<trans-unit id="s34239948d1de01f1">
+  <source>Verification unavailable. Click to retry.</source>
+  <target>驗證暫不可用，點擊重試</target>
+</trans-unit>
+<trans-unit id="s067e961bb67cf3f6">
+  <source>Verifying…</source>
+  <target>正在驗證…</target>
+</trans-unit>
+<trans-unit id="s107ccef507b51f2c">
+  <source>Please complete the verification</source>
+  <target>請完成人機驗證</target>
+</trans-unit>
 </body>
 </file>
 </xliff>
