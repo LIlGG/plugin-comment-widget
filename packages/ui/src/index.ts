@@ -20,6 +20,7 @@ export default definePlugin({
   extensionPoints: {
     'comment:editor:replace': () => {
       return {
+        supportsEditing: true,
         component: Editor,
       };
     },
