@@ -80,6 +80,8 @@ export class ReplyForm extends LitElement {
       .submitting=${this.submitting}
       .captcha=${this.captcha}
       .hidePrivateCheckbox=${true}
+      .commentName=${this.comment?.metadata.name || ''}
+      .quoteReplyName=${this.quoteReply?.metadata.name || ''}
       ${ref(this.baseFormRef)}
       @submit="${this.onSubmit}"
     ></base-form>`;
@@ -91,6 +93,8 @@ export class ReplyForm extends LitElement {
     this.submitting = true;
 
     const data = e.detail;
+    const baseForm = this.baseFormRef.value;
+    const submittedDraft = baseForm?.getDraftSnapshot();
 
     const { displayName, email, website, content } = data || {};
 
@@ -153,10 +157,15 @@ export class ReplyForm extends LitElement {
         );
       }
 
-      this.dispatchEvent(new CustomEvent('reload'));
+      this.dispatchEvent(
+        new CustomEvent('reload', {
+          detail: {
+            resetForm: (form: BaseForm) => form.resetForm(submittedDraft),
+          },
+        })
+      );
+      baseForm?.resetForm(submittedDraft);
       window.dispatchEvent(new CustomEvent('halo:comment-reply:created'));
-
-      this.baseFormRef.value?.resetForm();
     } catch (error) {
       if (error instanceof FetchError) {
         if (
