@@ -18,18 +18,6 @@ export default definePlugin({
   components: {},
   routes: [],
   extensionPoints: {
-    'comment:list-item:operation:create': (comment) => [
-      {
-        priority: 25,
-        component: markRaw(
-          defineAsyncComponent(
-            () => import('./components/PinCommentOperation.vue')
-          )
-        ),
-        props: { getComment: () => comment.value.comment },
-        permissions: ['system:comments:manage'],
-      },
-    ],
     'comment:editor:replace': () => {
       return {
         supportsEditing: true,
