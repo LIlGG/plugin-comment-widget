@@ -95,6 +95,80 @@ class UploadLifecycleTest {
             .delete(any());
     }
 
+    @Test
+    void cancelIssuedTicketThroughEndpointChecksOwnershipAndPreservesImages() {
+        var upload = uploaded();
+        var ticket = service.issue(hash, owner);
+        var web = org.springframework.test.web.reactive.server.WebTestClient
+            .bindToRouterFunction(new UploadSubmissionEndpoint(service).endpoint()).build();
+        var path = "/submissions/" + ticket.getMetadata().getName();
+        web.delete().uri(path).header(UploadIdentity.TOKEN_HEADER, "b".repeat(64))
+            .exchange().expectStatus().isForbidden();
+        web.delete().uri(path).header(UploadIdentity.TOKEN_HEADER, token)
+            .exchange().expectStatus().isNoContent();
+        assertThat(service.getSubmission(ticket.getMetadata().getName(), hash, owner)
+            .getSpec().getState()).isEqualTo(CommentSubmission.State.FAILED);
+        assertThat(service.getUpload(upload.getMetadata().getName()).getSpec().getState())
+            .isEqualTo(CommentUpload.State.TEMPORARY);
+        assertThatThrownBy(() -> service.available(ticket.getMetadata().getName(), hash, owner))
+            .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    void onlyUnusedTicketsCanBeCancelled() {
+        uploaded();
+        for (var state : CommentSubmission.State.values()) {
+            if (state == CommentSubmission.State.ISSUED) continue;
+            var ticket = service.issue(hash, owner);
+            ticket.getSpec().setState(state);
+            save(ticket);
+            assertThatThrownBy(() -> service.cancelIssued(ticket.getMetadata().getName(), hash, owner))
+                .isInstanceOf(ResponseStatusException.class);
+            assertThat(service.getSubmission(ticket.getMetadata().getName(), hash, owner)
+                .getSpec().getState()).isEqualTo(state);
+        }
+    }
+
+    @Test
+    void cancellationCannotOverwriteAConcurrentReservation() {
+        uploaded();
+        var ticket = service.issue(hash, owner);
+        doAnswer(call -> {
+            CommentSubmission candidate = call.getArgument(0);
+            var concurrent = service.getSubmission(candidate.getMetadata().getName(), hash, owner);
+            concurrent.getSpec().setState(CommentSubmission.State.PREPARING);
+            save(concurrent);
+            throw new OptimisticLockingFailureException("Concurrent ticket reservation");
+        }).when(client).update(any(CommentSubmission.class));
+        assertThatThrownBy(() -> service.cancelIssued(ticket.getMetadata().getName(), hash, owner))
+            .isInstanceOf(OptimisticLockingFailureException.class);
+        assertThat(service.getSubmission(ticket.getMetadata().getName(), hash, owner)
+            .getSpec().getState()).isEqualTo(CommentSubmission.State.PREPARING);
+    }
+
+    @Test
+    void cancellationWinsAgainstADelayedReservation() throws Exception {
+        var upload = uploaded();
+        var ticket = service.issue(hash, owner);
+        doAnswer(call -> {
+            CommentSubmission candidate = call.getArgument(0);
+            if (candidate.getSpec().getState() == CommentSubmission.State.PREPARING) {
+                service.cancelIssued(candidate.getMetadata().getName(), hash, owner);
+                throw new OptimisticLockingFailureException("Concurrent ticket cancellation");
+            }
+            save(candidate);
+            return null;
+        }).when(client).update(any(CommentSubmission.class));
+        assertThatThrownBy(() -> service.reserve(
+            ticket.getMetadata().getName(), hash, owner, "/comments",
+            mapper.readTree("{}"), List.of(upload)
+        )).isInstanceOf(OptimisticLockingFailureException.class);
+        assertThat(service.getSubmission(ticket.getMetadata().getName(), hash, owner)
+            .getSpec().getState()).isEqualTo(CommentSubmission.State.FAILED);
+        assertThat(service.getUpload(upload.getMetadata().getName()).getSpec().getState())
+            .isEqualTo(CommentUpload.State.TEMPORARY);
+    }
+
     private boolean matches(Extension e, ListOptions options) {
         if (!matchesLabels(e, options)) {
             return false;
@@ -408,6 +482,21 @@ class UploadLifecycleTest {
         assertThatThrownBy(() -> service.retain(u.getMetadata().getName())).isInstanceOf(
             ResponseStatusException.class
         );
+    }
+
+    @Test
+    void expiredUploadsWithoutAttachmentsReleaseTheirQuota() {
+        for (int i = 0; i < 20; i++) {
+            var upload = service.begin(hash, owner);
+            upload.getSpec().setExpiresAt(Instant.now().minus(Duration.ofDays(7)));
+            save(upload);
+            new UploadReconciler(client, service).reconcile(
+                new Reconciler.Request(upload.getMetadata().getName())
+            );
+            assertThat(client.fetch(CommentUpload.class, upload.getMetadata().getName())).isEmpty();
+        }
+        assertThatCode(() -> service.begin(hash, owner)).doesNotThrowAnyException();
+        verify(client, never()).delete(any(Attachment.class));
     }
 
     @Test

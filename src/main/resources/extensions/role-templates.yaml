@@ -21,7 +21,7 @@ rules:
     verbs: [ "create" ]
   - apiGroups: [ "api.commentwidget.halo.run" ]
     resources: [ "submissions" ]
-    verbs: [ "get" ]
+    verbs: [ "get", "delete" ]
   - apiGroups: [ "api.commentwidget.halo.run" ]
     resources: [ "submissions" ]
     verbs: [ "create" ]

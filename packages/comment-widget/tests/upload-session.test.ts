@@ -12,6 +12,11 @@ async function withServer(
   const state = { posts: [] as string[], status: 'UNKNOWN', tickets: 0 };
   const server = createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
+    if (req.method === 'DELETE') {
+      state.status = 'FAILED';
+      res.writeHead(204);
+      return res.end();
+    }
     if (req.method === 'GET') {
       return respondWithStatus(res, state.status);
     }
@@ -49,7 +54,7 @@ test('unknown submission cannot be sent to Halo twice', () =>
     );
     await assert.rejects(
       session.submit(base, { content: 'one' }, ['upload'], {}, base),
-      /正在确认/
+      /being confirmed/
     );
     assert.equal(state.posts.length, 1);
   }));
@@ -87,7 +92,7 @@ test('removing all images does not bypass uncertainty protection', () =>
     );
     await assert.rejects(
       session.submit(base, { content: 'two' }, [], {}, base),
-      /正在确认/
+      /being confirmed/
     );
     assert.equal(state.posts.length, 1);
   }));
@@ -101,7 +106,7 @@ test('purged ticket never causes a second comment POST', () =>
     state.status = 'MISSING';
     await assert.rejects(
       session.submit(base, { content: 'one' }, ['upload'], {}, base),
-      /已失效/
+      /has expired/
     );
     assert.equal(state.posts.length, 1);
   }));
@@ -139,12 +144,12 @@ test('confirmed submission with changed content is not reported as success', () 
     state.status = 'BOUND';
     await assert.rejects(
       session.submit(base, { content: 'edited' }, ['upload'], {}, base),
-      /当前内容已修改/
+      /Save your changes/
     );
     assert.equal(state.posts.length, 1);
   }));
 
-test('issued ticket with changed content is not posted again', () =>
+test('issued ticket is cancelled before allowing changed content', () =>
   withServer(async (base, state) => {
     const session = new UploadSession();
     await assert.rejects(
@@ -153,9 +158,14 @@ test('issued ticket with changed content is not posted again', () =>
     state.status = 'ISSUED';
     await assert.rejects(
       session.submit(base, { content: 'edited' }, ['upload'], {}, base),
-      /恢复原内容/
+      /cancelled/
     );
     assert.equal(state.posts.length, 1);
+    assert.equal(session.snapshot().pending, undefined);
+    await assert.rejects(
+      session.submit(base, { content: 'edited' }, ['upload'], {}, base)
+    );
+    assert.equal(state.tickets, 2);
   }));
 
 test('ordinary submission does not acquire or attach an upload ticket', () =>
@@ -167,4 +177,43 @@ test('ordinary submission does not acquire or attach an upload ticket', () =>
     assert.equal(state.posts.length, 1);
     assert.equal(state.posts[0], undefined);
     assert.equal(state.tickets, 0);
+  }));
+
+test('confirmed old submission releases its ticket without discarding changed content', () =>
+  withServer(async (base, state) => {
+    const session = new UploadSession();
+    await assert.rejects(
+      session.submit(base, { content: 'one' }, ['upload'], {}, base)
+    );
+    state.status = 'BOUND';
+    await assert.rejects(
+      session.submit(base, { content: 'new draft' }, [], {}, base),
+      /Save your changes/
+    );
+    assert.equal(session.snapshot().pending, undefined);
+    assert.equal(state.posts.length, 1);
+    await assert.rejects(
+      session.submit(base, { content: 'new draft' }, [], {}, base)
+    );
+    assert.equal(state.posts.length, 2);
+  }));
+
+test('a failed ticket checkpoint prevents POST and reuses the ticket on retry', () =>
+  withServer(async (base, state) => {
+    let fail = true;
+    const session = new UploadSession(undefined, async () => {
+      if (fail) throw new Error('storage unavailable');
+    });
+    await assert.rejects(
+      session.submit(base, { content: 'one' }, ['upload'], {}, base),
+      /storage unavailable/
+    );
+    assert.equal(state.posts.length, 0);
+    fail = false;
+    state.status = 'ISSUED';
+    await assert.rejects(
+      session.submit(base, { content: 'one' }, ['upload'], {}, base)
+    );
+    assert.equal(state.posts.length, 1);
+    assert.equal(state.tickets, 1);
   }));

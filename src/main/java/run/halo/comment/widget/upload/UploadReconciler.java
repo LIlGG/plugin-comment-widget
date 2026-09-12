@@ -46,9 +46,6 @@ public class UploadReconciler implements Reconciler<Reconciler.Request> {
                 return Result.doNotRetry();
             }
             var latest = remaining.get();
-            if (isAbandonedUpload(latest)) {
-                return Result.doNotRetry();
-            }
             if (hasUnknownSubmission(latest)) {
                 return Result.doNotRetry();
             }
@@ -178,6 +175,12 @@ public class UploadReconciler implements Reconciler<Reconciler.Request> {
             }
         }
         var latest = lifecycle.getUpload(upload.getMetadata().getName());
+        if (matches.isEmpty() && latest.getSpec().getState() == UPLOADING
+            && !latest.getSpec().isRetained() && latest.getSpec().getAttachmentName() == null
+            && !latest.getSpec().getExpiresAt().isAfter(now)) {
+            client.delete(latest);
+            return;
+        }
         if (isExpiredAttachedUpload(latest, now)) {
             latest.getSpec().setState(GC_PENDING);
             latest.getSpec().setDeleteAfter(now);
@@ -243,21 +246,6 @@ public class UploadReconciler implements Reconciler<Reconciler.Request> {
     @Override
     public Controller setupWith(ControllerBuilder builder) {
         return builder.extension(new CommentUpload()).syncAllOnStart(true).build();
-    }
-
-    private boolean isAbandonedUpload(CommentUpload upload) {
-        var spec = upload.getSpec();
-        if (spec.getState() != UPLOADING) {
-            return false;
-        }
-        if (spec.getAttachmentName() != null) {
-            return false;
-        }
-        return spec
-            .getExpiresAt()
-            .minus(UploadLifecycleService.TEMP_TTL)
-            .plus(Duration.ofMinutes(10))
-            .isBefore(Instant.now());
     }
 
     private boolean canDelete(CommentUpload.Spec spec, Instant now) {

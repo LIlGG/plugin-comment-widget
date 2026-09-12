@@ -26,6 +26,7 @@ import { when } from 'lit/directives/when.js';
 import { ofetch } from 'ofetch';
 import type { CommentEditor } from './comment-editor';
 import { cleanHtml } from './utils/html';
+import { deleteUploadDraft } from './utils/upload-draft';
 import './base-tooltip';
 import './turnstile-captcha';
 import type { AltchaCaptcha } from './altcha-captcha';
@@ -131,6 +132,7 @@ export class BaseForm extends LitElement {
 
   private draftKey = '';
   private draftContent = '';
+  private draftRevision = '';
   @state() private draftHidden = false;
 
   protected override willUpdate() {
@@ -148,12 +150,15 @@ export class BaseForm extends LitElement {
     }
     this.draftKey = key;
     this.draftContent = '';
+    this.draftRevision = '';
     this.draftHidden = false;
     window.removeEventListener('beforeunload', this.onBeforeUnload);
     try {
       const draft = JSON.parse(localStorage.getItem(key) || 'null');
       if (typeof draft?.content === 'string') {
         this.draftContent = draft.content;
+        this.draftRevision =
+          typeof draft.revision === 'string' ? draft.revision : '';
         this.draftHidden = draft.hidden === true;
         if (this.draftContent) {
           window.addEventListener('beforeunload', this.onBeforeUnload);
@@ -166,11 +171,12 @@ export class BaseForm extends LitElement {
 
   private saveDraft() {
     try {
-      if (this.draftContent) {
+      if (this.draftContent || this.editorRef.value?.hasPendingUpload) {
         localStorage.setItem(
           this.draftKey,
           JSON.stringify({
             content: this.draftContent,
+            revision: this.draftRevision,
             hidden: this.draftHidden,
           })
         );
@@ -310,11 +316,22 @@ export class BaseForm extends LitElement {
   };
 
   private onEditorUpdate(
-    event: CustomEvent<{ content: string; characterCount: number }>
+    event: CustomEvent<{
+      content: string;
+      characterCount: number;
+      revision: string;
+    }>
   ) {
+    const previousRevision = this.draftRevision;
+    this.draftRevision = event.detail.revision;
     this.draftContent =
       event.detail.characterCount > 0 ? event.detail.content : '';
     this.saveDraft();
+    if (!this.draftContent) {
+      void deleteUploadDraft(this.draftKey, previousRevision, true).catch(
+        () => {}
+      );
+    }
     if (event.detail.characterCount > 0) {
       window.addEventListener('beforeunload', this.onBeforeUnload);
     } else {
@@ -393,7 +410,7 @@ export class BaseForm extends LitElement {
   override render() {
     return html`
       <form class="form w-full flex flex-col gap-4" @submit="${this.onSubmit}">
-        ${keyed(this.draftKey, html`<comment-editor .disabled=${this.busy} .enableUpload=${this.canUploadImages} .initialContent=${this.draftContent} .enableEmoji=${this.configMapData?.editor?.enableEmoji !== false} ${ref(this.editorRef)} .placeholder=${this.configMapData?.editor?.placeholder} @update=${this.onEditorUpdate}></comment-editor>`)}
+        ${keyed(this.draftKey, html`<comment-editor .draftKey=${this.draftKey} .draftRevision=${this.draftRevision} .disabled=${this.busy} .enableUpload=${this.canUploadImages} .initialContent=${this.draftContent} .enableEmoji=${this.configMapData?.editor?.enableEmoji !== false} ${ref(this.editorRef)} .placeholder=${this.configMapData?.editor?.placeholder} @update=${this.onEditorUpdate}></comment-editor>`)}
 
         ${when(
           !this.currentUser && this.allowAnonymousComments,
@@ -691,6 +708,7 @@ export class BaseForm extends LitElement {
   getDraftSnapshot() {
     return {
       key: this.draftKey,
+      revision: this.draftRevision,
       content: this.draftContent,
       hidden: this.draftHidden,
     };
@@ -703,12 +721,16 @@ export class BaseForm extends LitElement {
       );
       if (
         stored &&
-        (stored.content !== submittedDraft.content ||
+        ((stored.revision ?? '') !== submittedDraft.revision ||
+          stored.content !== submittedDraft.content ||
           stored.hidden !== submittedDraft.hidden)
       ) {
         return false;
       }
       localStorage.removeItem(submittedDraft.key);
+      void deleteUploadDraft(submittedDraft.key, submittedDraft.revision).catch(
+        () => {}
+      );
     } catch {
       // A detached form cannot determine whether another editor has a newer draft.
       if (!this.isConnected) {
@@ -717,6 +739,7 @@ export class BaseForm extends LitElement {
     }
     if (
       this.draftKey !== submittedDraft.key ||
+      this.draftRevision !== submittedDraft.revision ||
       this.draftContent !== submittedDraft.content ||
       this.draftHidden !== submittedDraft.hidden
     ) {
@@ -724,7 +747,6 @@ export class BaseForm extends LitElement {
     }
     this.draftContent = '';
     this.draftHidden = false;
-    this.saveDraft();
     const form = this.shadowRoot?.querySelector('form');
     form?.reset();
     if (this.editorRef.value?.editor) {

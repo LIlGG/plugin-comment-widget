@@ -182,6 +182,17 @@ public class UploadLifecycleService {
         return submission;
     }
 
+    /** Fence an unused ticket against a concurrent request before discarding its client state. */
+    public void cancelIssued(String id, String hash, String owner) {
+        var submission = getSubmission(id, hash, owner);
+        if (submission.getMetadata().getDeletionTimestamp() != null
+            || submission.getSpec().getState() != CommentSubmission.State.ISSUED) {
+            throw error(HttpStatus.CONFLICT, "Submission already recorded; check submission status");
+        }
+        submission.getSpec().setState(CommentSubmission.State.FAILED);
+        client.update(submission); // The same version check fences reserve() before forwarding.
+    }
+
     public List<CommentUpload> referenced(String content) {
         var images = UploadReferences.images(content);
         if (images.isEmpty()) {

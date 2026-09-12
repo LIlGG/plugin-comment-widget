@@ -1,3 +1,4 @@
+import { msg } from '@lit/localize';
 import { ofetch } from 'ofetch';
 import type { UploadedImage, UploadSession } from './upload-session';
 
@@ -40,12 +41,12 @@ export async function uploadFiles(
   } catch (error: unknown) {
     if (hasErrorData(error)) {
       const errorData = (error as { data: ErrorResponse }).data;
-      const title = errorData?.title || '上传失败';
+      const title = errorData?.title || msg('Upload failed');
       const detail = errorData?.detail || '';
       const message = uploadErrorMessage(title, detail);
       throw new Error(message);
     }
-    throw new Error('上传失败');
+    throw new Error(msg('Upload failed'));
   }
 }
 

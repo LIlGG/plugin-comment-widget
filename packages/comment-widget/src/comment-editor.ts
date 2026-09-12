@@ -12,8 +12,15 @@ import { property } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { when } from 'lit/directives/when.js';
 import { baseUrlContext } from './context';
+import {
+  restoreUploadDraft,
+  saveUploadDraft,
+  uploadSession,
+} from './extension/uploaded-images';
+import { ToastManager } from './lit-toast';
 import baseStyles from './styles/base';
 import { cleanHtml } from './utils/html';
+import { readUploadDraft } from './utils/upload-draft';
 
 interface ActionItem {
   name?: string;
@@ -97,6 +104,40 @@ export class CommentEditor extends LitElement {
   @property({ type: String, attribute: 'initial-content' })
   initialContent = '';
 
+  @property({ attribute: false })
+  draftKey = '';
+
+  @property({ attribute: false })
+  draftRevision = '';
+
+  get hasPendingUpload() {
+    return !!this.editor && !!uploadSession(this.editor).snapshot().pending;
+  }
+
+  private draftSaveWarned = false;
+
+  private reportDraftError = () => {
+    if (this.draftSaveWarned) return;
+    this.draftSaveWarned = true;
+    new ToastManager().warn(
+      msg('Unable to save image draft. Keep this page open.')
+    );
+  };
+
+  private saveUploadDraft = async (sessionChange?: {
+    previousPendingId?: string;
+  }) => {
+    if (this.editor) {
+      return saveUploadDraft(
+        this.editor,
+        this.draftKey,
+        this.draftRevision,
+        sessionChange
+      );
+    }
+    return false;
+  };
+
   @property({ type: Boolean, attribute: 'keep-alive' })
   keepAlive = false;
 
@@ -136,6 +177,11 @@ export class CommentEditor extends LitElement {
     const { EditorUpload } = await import('./extension/editor-upload');
     const { EditorImage } = await import('./extension/editor-image');
 
+    const draft = await readUploadDraft(
+      this.draftKey,
+      this.draftRevision
+    ).catch(this.reportDraftError);
+    if (!this.isConnected) return;
     this.loading = false;
 
     this.editor = new Editor({
@@ -200,15 +246,36 @@ export class CommentEditor extends LitElement {
       },
     });
 
+    restoreUploadDraft(
+      this.editor,
+      draft || undefined,
+      async (previousPendingId) => {
+        if (!(await this.saveUploadDraft({ previousPendingId }))) {
+          throw new Error(
+            msg('Your draft has changed. Reopen it before retrying.')
+          );
+        }
+      },
+      async () =>
+        (await readUploadDraft(this.draftKey, this.draftRevision))?.session
+    );
+
     this.editor.on('update', () => {
+      this.draftRevision = Array.from(
+        crypto.getRandomValues(new Uint8Array(16))
+      )
+        .map((value) => value.toString(16).padStart(2, '0'))
+        .join('');
       this.dispatchEvent(
         new CustomEvent('update', {
           detail: {
+            revision: this.draftRevision,
             content: cleanHtml(this.editor?.getHTML()),
             characterCount: this.editor?.storage.characterCount.characters(),
           },
         })
       );
+      void this.saveUploadDraft().catch(this.reportDraftError);
     });
   }
 
@@ -230,7 +297,7 @@ export class CommentEditor extends LitElement {
     if (!this.editor) {
       return;
     }
-    this.editor.commands.setContent('');
+    this.editor.commands.setContent('', { emitUpdate: false });
     // A new EditorState clears undo history after a successful submission.
     const { doc, schema, plugins } = this.editor.state;
     this.editor.view.updateState(EditorState.create({ doc, schema, plugins }));

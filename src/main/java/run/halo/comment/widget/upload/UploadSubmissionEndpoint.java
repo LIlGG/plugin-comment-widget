@@ -50,6 +50,18 @@ public class UploadSubmissionEndpoint implements CustomEndpoint {
                     )
                     .response(Builder.responseBuilder().implementation(SubmissionStatus.class))
             )
+            .DELETE("submissions/{name}", this::cancel, builder ->
+                builder
+                    .operationId("cancelUnusedUploadSubmission")
+                    .tag("UploadSubmissions")
+                    .parameter(
+                        org.springdoc.core.fn.builders.parameter.Builder.parameterBuilder()
+                            .name("name")
+                            .in(io.swagger.v3.oas.annotations.enums.ParameterIn.PATH)
+                            .required(true)
+                    )
+                    .response(Builder.responseBuilder().responseCode("204"))
+            )
             .build();
     }
 
@@ -88,6 +100,16 @@ public class UploadSubmissionEndpoint implements CustomEndpoint {
             owner
         );
         return new SubmissionStatus(submission.getSpec().getState().name());
+    }
+
+    private Mono<ServerResponse> cancel(ServerRequest request) {
+        return UploadIdentity.currentOwner()
+            .flatMap(owner ->
+                Mono.fromRunnable(() -> lifecycle.cancelIssued(
+                    request.pathVariable("name"), credential(request), owner
+                )).subscribeOn(Schedulers.boundedElastic())
+            )
+            .then(ServerResponse.noContent().build());
     }
 
     private String credential(ServerRequest request) {

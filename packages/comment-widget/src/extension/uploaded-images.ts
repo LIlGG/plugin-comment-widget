@@ -1,16 +1,29 @@
-import type { Editor } from '@tiptap/core';
+import { msg } from '@lit/localize';
+import type { Editor, JSONContent } from '@tiptap/core';
 import Image from '@tiptap/extension-image';
 import type { Node } from '@tiptap/pm/model';
 import { ToastManager } from '../lit-toast';
 import { uploadFiles } from '../utils/upload-api';
+import { type UploadDraft, writeUploadDraft } from '../utils/upload-draft';
 import { applyUploadResults } from '../utils/upload-results';
-import { type UploadedImage, UploadSession } from '../utils/upload-session';
+import {
+  type UploadedImage,
+  UploadSession,
+  type UploadSessionSnapshot,
+} from '../utils/upload-session';
 import { ImageUploadState } from './image-upload-state';
 
 type FileProps = { file: File; editor: Editor };
 
 const blobUrls = new WeakMap<Editor, Set<string>>();
 const sessions = new WeakMap<Editor, UploadSession>();
+const sessionPersistence = new WeakMap<
+  Editor,
+  {
+    save: (previousPendingId?: string) => Promise<void>;
+    read: () => Promise<UploadSessionSnapshot | undefined>;
+  }
+>();
 const imageStates = new WeakMap<Editor, ImageUploadState>();
 
 export function imageUploadState(editor: Editor) {
@@ -24,11 +37,75 @@ export function imageUploadState(editor: Editor) {
 export function uploadSession(editor: Editor): UploadSession {
   let session = sessions.get(editor);
   if (!session) {
-    session = new UploadSession();
+    const persistence = sessionPersistence.get(editor);
+    session = new UploadSession(
+      undefined,
+      persistence?.save,
+      persistence?.read
+    );
     sessions.set(editor, session);
   }
   return session;
 }
+export function restoreUploadDraft(
+  editor: Editor,
+  draft: UploadDraft | undefined,
+  onChange: (previousPendingId?: string) => Promise<void>,
+  onRead: () => Promise<UploadSessionSnapshot | undefined>
+) {
+  sessionPersistence.set(editor, { save: onChange, read: onRead });
+  sessions.set(editor, new UploadSession(draft?.session, onChange, onRead));
+  if (!draft?.document) return;
+  const urls = new Map<string, string>();
+  const restoreNode = (node: JSONContent) => {
+    if (node.type === Image.name && node.attrs) {
+      const attrs = node.attrs;
+      if (attrs.local && attrs.file instanceof File) {
+        let url = urls.get(attrs.src);
+        if (!url) {
+          url = URL.createObjectURL(attrs.file);
+          urls.set(attrs.src, url);
+        }
+        attrs.src = url;
+        imageUploadState(editor).rememberLocal(url, attrs.file);
+      } else if (attrs.uploadId) {
+        imageUploadState(editor).rememberUploaded(attrs.src, {
+          uploadId: attrs.uploadId,
+          url: attrs.src,
+          expiresAt: '',
+        });
+      }
+    }
+    node.content?.forEach(restoreNode);
+  };
+  restoreNode(draft.document);
+  blobUrls.set(editor, new Set(urls.values()));
+  editor.commands.setContent(draft.document, { emitUpdate: false });
+}
+
+export async function saveUploadDraft(
+  editor: Editor,
+  key: string,
+  revision: string,
+  sessionChange?: { previousPendingId?: string }
+) {
+  if (!key) return true;
+  if (!revision || editor.isDestroyed) return false;
+  const session = uploadSession(editor).snapshot();
+  let hasImages = false;
+  editor.state.doc.descendants((node) => {
+    if (node.attrs.local || node.attrs.uploadId) hasImages = true;
+  });
+  // IndexedDB structured cloning preserves File attributes without base64 expansion.
+  return writeUploadDraft(
+    key,
+    revision,
+    { revision, document: editor.getJSON(), session },
+    hasImages,
+    sessionChange
+  );
+}
+
 export function resetUploadSession(editor: Editor) {
   sessions.delete(editor);
   imageStates.delete(editor);
@@ -101,7 +178,7 @@ async function uploadFileAndReplaceNode(
       baseUrl
     );
     if (attachments.length !== nodes.length) {
-      throw new Error('上传结果不完整，请重试');
+      throw new Error(msg('Upload results are incomplete. Please retry.'));
     }
     applyUploadResults(attachments, (index, attachment) => {
       replaceUploadedImage(editor, nodes[index], attachment);
@@ -184,5 +261,5 @@ function imageErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }
-  return '未知错误';
+  return msg('Unknown error');
 }
